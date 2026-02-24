@@ -261,16 +261,14 @@ export default function DashboardPage() {
   const [confirmingId, setConfirmingId] = useState<{ id: number; action: 'authorize' | 'reject' } | null>(null)
 
   // License
-  const [licenseForm, setLicenseForm] = useState<LicenseSetupPayload>({
-    empresa_nombre: '',
-    empresa_rfc: '',
-    usuario_email: '',
-    max_usuarios: 5,
-    max_usuarios_conectados: 3,
-  })
+  const defaultLicenseForm: LicenseSetupPayload = { empresa_nombre: '', empresa_rfc: '', usuario_email: '', max_usuarios: 5, max_usuarios_conectados: 3 }
+  const [licenseForm, setLicenseForm] = useState<LicenseSetupPayload>(defaultLicenseForm)
   const [licenseLoading, setLicenseLoading] = useState(false)
-  const [licenseMessage, setLicenseMessage] = useState<string | null>(null)
+  const [licenseSuccess, setLicenseSuccess] = useState<{ empresa_nombre: string; usuario_email: string } | null>(null)
   const [licenseError, setLicenseError] = useState<string | null>(null)
+  const [licenseStep, setLicenseStep] = useState<1 | 2>(1)
+  const [licenseFieldErrors, setLicenseFieldErrors] = useState<Partial<Record<keyof LicenseSetupPayload, string>>>({})
+  const [licenseTouched, setLicenseTouched] = useState<Partial<Record<keyof LicenseSetupPayload, boolean>>>({})
 
   // Anuncios
   const [anuncios, setAnuncios] = useState<Anuncio[]>([])
@@ -654,14 +652,44 @@ export default function DashboardPage() {
     }
   }
 
+  function validateLicenseField(field: keyof LicenseSetupPayload, value: string | number): string {
+    if (field === 'empresa_nombre') return String(value).trim().length < 2 ? 'Ingresa el nombre de la empresa (mín. 2 caracteres)' : ''
+    if (field === 'empresa_rfc') {
+      const rfc = String(value).trim().toUpperCase()
+      return rfc.length < 12 || rfc.length > 13 ? 'El RFC debe tener 12 o 13 caracteres' : ''
+    }
+    if (field === 'usuario_email') return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value)) ? 'Ingresa un correo electrónico válido' : ''
+    if (field === 'max_usuarios') return Number(value) < 1 ? 'Debe ser al menos 1 usuario' : ''
+    if (field === 'max_usuarios_conectados') return Number(value) < 1 ? 'Debe ser al menos 1' : Number(value) > licenseForm.max_usuarios ? 'No puede superar el máximo de usuarios' : ''
+    return ''
+  }
+
+  function handleLicenseBlur(field: keyof LicenseSetupPayload) {
+    setLicenseTouched(prev => ({ ...prev, [field]: true }))
+    const err = validateLicenseField(field, licenseForm[field] as string | number)
+    setLicenseFieldErrors(prev => ({ ...prev, [field]: err }))
+  }
+
+  function handleLicenseFieldChange(field: keyof LicenseSetupPayload, value: string | number) {
+    setLicenseForm(prev => ({ ...prev, [field]: value }))
+    if (licenseTouched[field]) {
+      const err = validateLicenseField(field, value)
+      setLicenseFieldErrors(prev => ({ ...prev, [field]: err }))
+    }
+  }
+
+  function handleLicenseStepNext() {
+    const fields: (keyof LicenseSetupPayload)[] = ['empresa_nombre', 'empresa_rfc', 'usuario_email']
+    const touched = Object.fromEntries(fields.map(f => [f, true])) as Partial<Record<keyof LicenseSetupPayload, boolean>>
+    const errors = Object.fromEntries(fields.map(f => [f, validateLicenseField(f, licenseForm[f] as string | number)])) as Partial<Record<keyof LicenseSetupPayload, string>>
+    setLicenseTouched(prev => ({ ...prev, ...touched }))
+    setLicenseFieldErrors(prev => ({ ...prev, ...errors }))
+    if (Object.values(errors).every(e => !e)) setLicenseStep(2)
+  }
+
   async function handleCreateLicense() {
     if (!session?.token) return
-    if (!licenseForm.empresa_nombre || !licenseForm.empresa_rfc || !licenseForm.usuario_email) {
-      setLicenseError('Completa empresa, RFC y correo del usuario')
-      return
-    }
     setLicenseLoading(true)
-    setLicenseMessage(null)
     setLicenseError(null)
     try {
       const res = await fetch('https://montekvps.cloud/api/licenses/setup', {
@@ -671,8 +699,11 @@ export default function DashboardPage() {
       })
       if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
       if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
-      setLicenseMessage('Licencia creada correctamente.')
-      setLicenseForm({ empresa_nombre: '', empresa_rfc: '', usuario_email: '', max_usuarios: 5, max_usuarios_conectados: 3 })
+      setLicenseSuccess({ empresa_nombre: licenseForm.empresa_nombre, usuario_email: licenseForm.usuario_email })
+      setLicenseForm(defaultLicenseForm)
+      setLicenseStep(1)
+      setLicenseTouched({})
+      setLicenseFieldErrors({})
     } catch (e) {
       setLicenseError(e instanceof Error ? e.message : 'No se pudo crear la licencia')
     } finally {
@@ -1261,84 +1292,344 @@ export default function DashboardPage() {
 
           {/* ── ALTA LICENCIA ─────────────────────────── */}
           {activeView === 'license-setup' && (
-            <div className="max-w-2xl">
-              <div className="bg-card rounded-xl border border-border p-6">
-                <SectionHeader title="Crear nueva licencia" description="Registra una empresa y genera sus credenciales de acceso." />
+            <div className="max-w-2xl space-y-5">
 
-                {licenseMessage && <SuccessBanner message={licenseMessage} />}
-                {licenseError && <ErrorBanner message={licenseError} />}
-
-                <div className="space-y-5">
-                  {/* Empresa section */}
+              {/* Success state */}
+              {licenseSuccess && (
+                <div className="bg-card rounded-xl border border-emerald-200 p-8 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-100 border border-emerald-200 flex items-center justify-center mx-auto">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Datos de la empresa</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
-                        <InputField
-                          label="Nombre de la empresa"
-                          value={licenseForm.empresa_nombre}
-                          onChange={(e) => setLicenseForm((prev) => ({ ...prev, empresa_nombre: e.target.value }))}
-                          placeholder="Mi Empresa SA de CV"
-                        />
+                    <h3 className="text-lg font-bold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                      Licencia creada exitosamente
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed max-w-sm mx-auto">
+                      La empresa <strong className="text-foreground">{licenseSuccess.empresa_nombre}</strong> fue registrada. Las credenciales de acceso fueron enviadas a{' '}
+                      <strong className="text-foreground">{licenseSuccess.usuario_email}</strong>.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setLicenseSuccess(null); setLicenseStep(1) }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors shadow-sm"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      Alta de otra licencia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectView('licenses')}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-secondary text-foreground text-sm font-medium hover:bg-secondary/80 transition-colors"
+                    >
+                      Ver todas las licencias
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!licenseSuccess && (
+                <>
+                  {/* Header */}
+                  <div>
+                    <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>Alta de Licencia</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Registra una nueva empresa y genera sus credenciales de acceso</p>
+                  </div>
+
+                  {/* Stepper */}
+                  <div className="flex items-center gap-0">
+                    {[
+                      { n: 1, label: 'Datos de empresa' },
+                      { n: 2, label: 'Capacidad y confirmar' },
+                    ].map((step, idx) => (
+                      <div key={step.n} className="flex items-center flex-1">
+                        <div className="flex items-center gap-2.5 flex-shrink-0">
+                          <div className={cn(
+                            'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all duration-200',
+                            licenseStep > step.n
+                              ? 'bg-emerald-500 border-emerald-500 text-white'
+                              : licenseStep === step.n
+                              ? 'bg-accent border-accent text-white'
+                              : 'bg-secondary border-border text-muted-foreground'
+                          )}>
+                            {licenseStep > step.n ? (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                            ) : step.n}
+                          </div>
+                          <span className={cn(
+                            'text-xs font-medium hidden sm:block',
+                            licenseStep === step.n ? 'text-foreground' : 'text-muted-foreground'
+                          )}>
+                            {step.label}
+                          </span>
+                        </div>
+                        {idx < 1 && (
+                          <div className={cn(
+                            'h-px flex-1 mx-3 transition-colors duration-300',
+                            licenseStep > 1 ? 'bg-emerald-400' : 'bg-border'
+                          )} />
+                        )}
                       </div>
-                      <InputField
-                        label="RFC"
-                        value={licenseForm.empresa_rfc}
-                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, empresa_rfc: e.target.value }))}
-                        placeholder="ABC123456789"
-                      />
-                      <InputField
-                        label="Correo del usuario"
-                        type="email"
-                        value={licenseForm.usuario_email}
-                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, usuario_email: e.target.value }))}
-                        placeholder="admin@empresa.com"
-                      />
-                    </div>
+                    ))}
                   </div>
 
-                  <div className="h-px bg-border" />
-
-                  {/* Capacity section */}
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Capacidad de licencia</p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <InputField
-                        label="Máx. usuarios"
-                        type="number"
-                        min={1}
-                        value={licenseForm.max_usuarios}
-                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, max_usuarios: Number(e.target.value) || 0 }))}
-                        hint="Total de usuarios que pueden registrarse"
-                      />
-                      <InputField
-                        label="Máx. conectados"
-                        type="number"
-                        min={1}
-                        value={licenseForm.max_usuarios_conectados}
-                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, max_usuarios_conectados: Number(e.target.value) || 0 }))}
-                        hint="Sesiones simultáneas permitidas"
-                      />
+                  {/* Error banner */}
+                  {licenseError && (
+                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-destructive/25 bg-destructive/8 text-sm font-medium text-destructive">
+                      <svg width="15" height="15" className="flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                      {licenseError}
+                      <button onClick={() => setLicenseError(null)} className="ml-auto opacity-60 hover:opacity-100 transition-opacity">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                <div className="mt-6 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => void handleCreateLicense()}
-                    disabled={licenseLoading}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                    style={{ fontFamily: 'var(--font-space-grotesk)' }}
-                  >
-                    {licenseLoading ? (
-                      <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>Creando...</>
-                    ) : (
-                      <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.86L12 18.56l-6.18 3.44L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>Dar de alta licencia</>
-                    )}
-                  </button>
-                </div>
-              </div>
+                  {/* ── PASO 1: Datos ── */}
+                  {licenseStep === 1 && (
+                    <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Informacion de la empresa</p>
+                        <div className="space-y-4">
+                          <div className="space-y-1.5">
+                            <label className="block text-sm font-medium text-foreground">Nombre de la empresa <span className="text-destructive">*</span></label>
+                            <input
+                              type="text"
+                              value={licenseForm.empresa_nombre}
+                              onChange={e => handleLicenseFieldChange('empresa_nombre', e.target.value)}
+                              onBlur={() => handleLicenseBlur('empresa_nombre')}
+                              placeholder="Mi Empresa SA de CV"
+                              className={cn(
+                                'w-full rounded-lg border bg-secondary/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:border-accent transition-all duration-150',
+                                licenseFieldErrors.empresa_nombre && licenseTouched.empresa_nombre
+                                  ? 'border-destructive/50 focus:ring-destructive/20'
+                                  : 'border-border focus:ring-accent/30'
+                              )}
+                            />
+                            {licenseFieldErrors.empresa_nombre && licenseTouched.empresa_nombre && (
+                              <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                                {licenseFieldErrors.empresa_nombre}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="block text-sm font-medium text-foreground">RFC <span className="text-destructive">*</span></label>
+                              <input
+                                type="text"
+                                value={licenseForm.empresa_rfc}
+                                onChange={e => handleLicenseFieldChange('empresa_rfc', e.target.value.toUpperCase())}
+                                onBlur={() => handleLicenseBlur('empresa_rfc')}
+                                placeholder="ABC123456789"
+                                maxLength={13}
+                                className={cn(
+                                  'w-full rounded-lg border bg-secondary/40 px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:border-accent transition-all duration-150 uppercase',
+                                  licenseFieldErrors.empresa_rfc && licenseTouched.empresa_rfc
+                                    ? 'border-destructive/50 focus:ring-destructive/20'
+                                    : 'border-border focus:ring-accent/30'
+                                )}
+                              />
+                              {licenseFieldErrors.empresa_rfc && licenseTouched.empresa_rfc && (
+                                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                                  {licenseFieldErrors.empresa_rfc}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="block text-sm font-medium text-foreground">Correo del administrador <span className="text-destructive">*</span></label>
+                              <input
+                                type="email"
+                                value={licenseForm.usuario_email}
+                                onChange={e => handleLicenseFieldChange('usuario_email', e.target.value)}
+                                onBlur={() => handleLicenseBlur('usuario_email')}
+                                placeholder="admin@empresa.com"
+                                className={cn(
+                                  'w-full rounded-lg border bg-secondary/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:border-accent transition-all duration-150',
+                                  licenseFieldErrors.usuario_email && licenseTouched.usuario_email
+                                    ? 'border-destructive/50 focus:ring-destructive/20'
+                                    : 'border-border focus:ring-accent/30'
+                                )}
+                              />
+                              {licenseFieldErrors.usuario_email && licenseTouched.usuario_email && (
+                                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                                  {licenseFieldErrors.usuario_email}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground">Las credenciales de acceso se enviarán a este correo</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={handleLicenseStepNext}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors shadow-sm"
+                        >
+                          Siguiente
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── PASO 2: Capacidad + Preview + Confirmar ── */}
+                  {licenseStep === 2 && (
+                    <div className="space-y-4">
+                      {/* Capacity card */}
+                      <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Capacidad de la licencia</p>
+
+                        {/* Usuarios stepper */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Total de usuarios</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">Cuantos usuarios pueden registrarse en el sistema</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleLicenseFieldChange('max_usuarios', Math.max(1, licenseForm.max_usuarios - 1))}
+                                className="w-8 h-8 rounded-lg border border-border bg-secondary text-foreground hover:bg-secondary/80 flex items-center justify-center transition-colors disabled:opacity-40"
+                                disabled={licenseForm.max_usuarios <= 1}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                              </button>
+                              <span className="w-10 text-center text-lg font-bold text-foreground tabular-nums" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                                {licenseForm.max_usuarios}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleLicenseFieldChange('max_usuarios', licenseForm.max_usuarios + 1)}
+                                className="w-8 h-8 rounded-lg border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 flex items-center justify-center transition-colors"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                              </button>
+                            </div>
+                          </div>
+                          {/* Visual indicator */}
+                          <div className="flex gap-1 flex-wrap">
+                            {Array.from({ length: Math.min(licenseForm.max_usuarios, 20) }).map((_, i) => (
+                              <div key={i} className="w-5 h-5 rounded bg-accent/20 border border-accent/30 flex items-center justify-center">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent/70"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                              </div>
+                            ))}
+                            {licenseForm.max_usuarios > 20 && (
+                              <div className="w-5 h-5 rounded bg-accent/10 border border-accent/20 flex items-center justify-center">
+                                <span className="text-[9px] font-bold text-accent/70">+{licenseForm.max_usuarios - 20}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="h-px bg-border" />
+
+                        {/* Conectados stepper */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Sesiones simultaneas</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">Cuantos usuarios pueden estar conectados al mismo tiempo</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleLicenseFieldChange('max_usuarios_conectados', Math.max(1, licenseForm.max_usuarios_conectados - 1))}
+                                className="w-8 h-8 rounded-lg border border-border bg-secondary text-foreground hover:bg-secondary/80 flex items-center justify-center transition-colors disabled:opacity-40"
+                                disabled={licenseForm.max_usuarios_conectados <= 1}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                              </button>
+                              <span className="w-10 text-center text-lg font-bold text-foreground tabular-nums" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                                {licenseForm.max_usuarios_conectados}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleLicenseFieldChange('max_usuarios_conectados', Math.min(licenseForm.max_usuarios, licenseForm.max_usuarios_conectados + 1))}
+                                disabled={licenseForm.max_usuarios_conectados >= licenseForm.max_usuarios}
+                                className="w-8 h-8 rounded-lg border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 flex items-center justify-center transition-colors disabled:opacity-40"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {licenseForm.max_usuarios_conectados} de {licenseForm.max_usuarios} usuarios podrán conectarse a la vez ({Math.round((licenseForm.max_usuarios_conectados / licenseForm.max_usuarios) * 100)}%)
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Preview card */}
+                      <div className="bg-card rounded-xl border border-accent/30 p-5 space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Vista previa de la licencia</p>
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-sm font-bold text-accent flex-shrink-0">
+                            {licenseForm.empresa_nombre.charAt(0).toUpperCase() || '?'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-foreground leading-tight">{licenseForm.empresa_nombre || '—'}</p>
+                            <p className="text-xs font-mono text-muted-foreground mt-0.5">{licenseForm.empresa_rfc || '—'}</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 pt-1">
+                          <div className="bg-secondary rounded-lg px-3 py-2.5 text-center border border-border">
+                            <p className="text-xs text-muted-foreground">Admin</p>
+                            <p className="text-xs font-medium text-foreground mt-0.5 truncate" title={licenseForm.usuario_email}>{licenseForm.usuario_email || '—'}</p>
+                          </div>
+                          <div className="bg-secondary rounded-lg px-3 py-2.5 text-center border border-border">
+                            <p className="text-xs text-muted-foreground">Max usuarios</p>
+                            <p className="text-xl font-bold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{licenseForm.max_usuarios}</p>
+                          </div>
+                          <div className="bg-secondary rounded-lg px-3 py-2.5 text-center border border-border">
+                            <p className="text-xs text-muted-foreground">Max sesiones</p>
+                            <p className="text-xl font-bold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{licenseForm.max_usuarios_conectados}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { setLicenseStep(1); setLicenseError(null) }}
+                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-secondary text-foreground text-sm font-medium hover:bg-secondary/80 transition-colors"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                          Regresar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleCreateLicense()}
+                          disabled={licenseLoading}
+                          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                          style={{ fontFamily: 'var(--font-space-grotesk)' }}
+                        >
+                          {licenseLoading ? (
+                            <>
+                              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>
+                              Creando licencia...
+                            </>
+                          ) : (
+                            <>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                              Confirmar y dar de alta
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
