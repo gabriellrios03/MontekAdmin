@@ -224,7 +224,7 @@ interface DashboardStats {
   requestsPendientes: number
 }
 
-/* ── Page ───────────────────────────────────────────────── */
+/* ── Page ────────────────────��──────────────────────────── */
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -251,11 +251,14 @@ export default function DashboardPage() {
 
   // Dev requests
   const [devRequests, setDevRequests] = useState<DevModeRequest[]>([])
-  const [devRequestsMeta, setDevRequestsMeta] = useState({ total: 0, page: 1, limit: 20 })
+  const [devRequestsMeta, setDevRequestsMeta] = useState({ total: 0, page: 1, limit: 50 })
   const [devRequestsLoading, setDevRequestsLoading] = useState(false)
   const [devRequestsError, setDevRequestsError] = useState<string | null>(null)
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null)
-  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+  const [devRequestsFilter, setDevRequestsFilter] = useState<'pending' | 'all'>('pending')
+  const [selectedRequest, setSelectedRequest] = useState<DevModeRequest | null>(null)
+  const [confirmingId, setConfirmingId] = useState<{ id: number; action: 'authorize' | 'reject' } | null>(null)
 
   // License
   const [licenseForm, setLicenseForm] = useState<LicenseSetupPayload>({
@@ -460,7 +463,7 @@ export default function DashboardPage() {
     setDevRequestsLoading(true)
     setDevRequestsError(null)
     try {
-      const res = await fetch('https://montekvps.cloud/api/dev-mode/requests?status=pending&page=1&limit=20', {
+      const res = await fetch('https://montekvps.cloud/api/dev-mode/requests?page=1&limit=50', {
         headers: { Authorization: `Bearer ${session.token}` },
       })
       if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
@@ -468,7 +471,7 @@ export default function DashboardPage() {
       const payload = (await res.json()) as DevModeResponse
       const rows = Array.isArray(payload?.data?.rows) ? payload.data.rows : []
       setDevRequests(rows)
-      setDevRequestsMeta({ total: Number(payload?.data?.total ?? rows.length), page: Number(payload?.data?.page ?? 1), limit: Number(payload?.data?.limit ?? 20) })
+      setDevRequestsMeta({ total: Number(payload?.data?.total ?? rows.length), page: Number(payload?.data?.page ?? 1), limit: Number(payload?.data?.limit ?? 50) })
     } catch (e) {
       setDevRequestsError(e instanceof Error ? e.message : 'No se pudieron cargar los requests')
     } finally {
@@ -677,6 +680,7 @@ export default function DashboardPage() {
   async function handleAuthorizeRequest(request: DevModeRequest) {
     if (!session?.token) return
     setActionLoadingId(request.id)
+    setConfirmingId(null)
     setActionMessage(null)
     setDevRequestsError(null)
     try {
@@ -687,10 +691,11 @@ export default function DashboardPage() {
       })
       if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
       if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
-      setActionMessage('Request autorizada correctamente.')
+      setActionMessage({ text: `Dev mode autorizado para ${request.empresaNombre}.`, type: 'success' })
+      setSelectedRequest(null)
       await loadDevRequests()
     } catch (e) {
-      setDevRequestsError(e instanceof Error ? e.message : 'No se pudo autorizar la request')
+      setActionMessage({ text: e instanceof Error ? e.message : 'No se pudo autorizar la request', type: 'error' })
     } finally {
       setActionLoadingId(null)
     }
@@ -699,6 +704,7 @@ export default function DashboardPage() {
   async function handleDeactivateRequest(request: DevModeRequest) {
     if (!session?.token) return
     setActionLoadingId(request.id)
+    setConfirmingId(null)
     setActionMessage(null)
     setDevRequestsError(null)
     try {
@@ -709,10 +715,11 @@ export default function DashboardPage() {
       })
       if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
       if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
-      setActionMessage('Request rechazada correctamente.')
+      setActionMessage({ text: `Solicitud de ${request.empresaNombre} rechazada.`, type: 'success' })
+      setSelectedRequest(null)
       await loadDevRequests()
     } catch (e) {
-      setDevRequestsError(e instanceof Error ? e.message : 'No se pudo rechazar la request')
+      setActionMessage({ text: e instanceof Error ? e.message : 'No se pudo rechazar la request', type: 'error' })
     } finally {
       setActionLoadingId(null)
     }
@@ -945,89 +952,300 @@ export default function DashboardPage() {
           )}
 
           {/* ── DEVS REQUEST ──────────────────────────── */}
-          {activeView === 'devs-request' && (
-            <div className="max-w-7xl">
-              <div className="bg-card rounded-xl border border-border p-6">
-                <SectionHeader
-                  title="Requests pendientes"
-                  description={`${devRequestsMeta.total} solicitudes · Página ${devRequestsMeta.page}`}
-                  action={<ReloadButton onClick={() => void loadDevRequests()} loading={devRequestsLoading} />}
-                />
+          {activeView === 'devs-request' && (() => {
+            const pendingList = devRequests.filter(r => r.status === 'pending')
+            const displayList = devRequestsFilter === 'pending' ? pendingList : devRequests
 
-                {actionMessage && <SuccessBanner message={actionMessage} />}
-                {devRequestsError && <ErrorBanner message={devRequestsError} />}
+            function relativeTime(iso: string) {
+              const date = new Date(iso)
+              const now = new Date()
+              const diffMs = now.getTime() - date.getTime()
+              const diffMin = Math.floor(diffMs / 60000)
+              if (diffMin < 1) return 'Ahora mismo'
+              if (diffMin < 60) return `Hace ${diffMin} min`
+              const diffHrs = Math.floor(diffMin / 60)
+              if (diffHrs < 24) return `Hace ${diffHrs} hr${diffHrs !== 1 ? 's' : ''}`
+              const diffDays = Math.floor(diffHrs / 24)
+              return `Hace ${diffDays} día${diffDays !== 1 ? 's' : ''}`
+            }
 
+            function statusBadge(status: string) {
+              if (status === 'pending') {
+                return (
+                  <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 border border-amber-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    Pendiente
+                  </span>
+                )
+              }
+              if (status === 'approved' || status === 'authorized') {
+                return (
+                  <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Aprobada
+                  </span>
+                )
+              }
+              return (
+                <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-secondary text-muted-foreground border border-border">
+                  {status}
+                </span>
+              )
+            }
+
+            return (
+              <div className="max-w-6xl space-y-5">
+                {/* Toast feedback */}
+                {actionMessage && (
+                  <div className={cn(
+                    'flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium shadow-sm',
+                    actionMessage.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-destructive/8 border-destructive/25 text-destructive'
+                  )}>
+                    {actionMessage.type === 'success' ? (
+                      <svg width="15" height="15" className="flex-shrink-0 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                    ) : (
+                      <svg width="15" height="15" className="flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    )}
+                    {actionMessage.text}
+                    <button onClick={() => setActionMessage(null)} className="ml-auto flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
+                  </div>
+                )}
+
+                {/* Header + stats */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                      Devs Request
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Solicitudes de activación de modo desarrollador</p>
+                  </div>
+                  <ReloadButton onClick={() => void loadDevRequests()} loading={devRequestsLoading} />
+                </div>
+
+                {/* Summary stat pills */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 border border-amber-200">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="text-xs font-semibold text-amber-700">{pendingList.length} pendientes</span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-secondary border border-border">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    <span className="text-xs font-semibold text-muted-foreground">{devRequests.length} en total</span>
+                  </div>
+                </div>
+
+                {/* Filter tabs */}
+                <div className="flex items-center gap-1 p-1 bg-secondary rounded-xl border border-border w-fit">
+                  {(['pending', 'all'] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setDevRequestsFilter(f)}
+                      className={cn(
+                        'px-4 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                        devRequestsFilter === f
+                          ? 'bg-card text-foreground shadow-sm border border-border'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {f === 'pending' ? `Pendientes · ${pendingList.length}` : `Todas · ${devRequests.length}`}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Content */}
                 {devRequestsLoading ? (
-                  <LoadingState text="Cargando requests..." />
-                ) : devRequests.length === 0 && !devRequestsError ? (
-                  <EmptyState text="No hay requests pendientes." />
-                ) : !devRequestsError ? (
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border bg-secondary/60">
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Empresa</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Solicitante</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Estado</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Nota</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Fecha</th>
-                          <th className="text-right text-xs font-semibold text-muted-foreground px-4 py-3">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {devRequests.map((request) => (
-                          <tr key={request.id} className="hover:bg-accent/4 transition-colors">
-                            <td className="px-4 py-3">
-                              <p className="font-medium text-foreground">{request.empresaNombre || `Request #${request.id}`}</p>
-                              <p className="text-xs text-muted-foreground mt-0.5 font-mono">{request.empresaId}</p>
-                            </td>
-                            <td className="px-4 py-3 text-muted-foreground text-sm">{request.requestedByEmail}</td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                                {request.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-muted-foreground max-w-[240px] truncate text-sm" title={request.requestNote || 'Sin nota'}>
-                              {request.requestNote || <span className="text-muted-foreground/50 italic">Sin nota</span>}
-                            </td>
-                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
-                              {new Date(request.requestedAt).toLocaleString('es-MX')}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center justify-end gap-2">
+                  <LoadingState text="Cargando solicitudes..." />
+                ) : devRequestsError ? (
+                  <ErrorState message={devRequestsError} onRetry={() => void loadDevRequests()} />
+                ) : displayList.length === 0 ? (
+                  <div className="flex flex-col items-center gap-4 py-20 text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground text-sm">Todo al dia</p>
+                      <p className="text-sm text-muted-foreground mt-0.5">No hay solicitudes pendientes de revision.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {displayList.map((request) => {
+                      const isActioning = actionLoadingId === request.id
+                      const isConfirming = confirmingId?.id === request.id
+                      const isPending = request.status === 'pending'
+
+                      return (
+                        <div
+                          key={request.id}
+                          className={cn(
+                            'bg-card rounded-xl border transition-all duration-200',
+                            selectedRequest?.id === request.id
+                              ? 'border-accent/50 shadow-sm shadow-accent/10'
+                              : 'border-border hover:border-border/80 hover:shadow-sm'
+                          )}
+                        >
+                          {/* Main row */}
+                          <div
+                            className="flex items-center gap-4 px-5 py-4 cursor-pointer"
+                            onClick={() => setSelectedRequest(selectedRequest?.id === request.id ? null : request)}
+                          >
+                            {/* Avatar */}
+                            <div className={cn(
+                              'w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0',
+                              isPending
+                                ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                            )}>
+                              {(request.empresaNombre || 'E').charAt(0).toUpperCase()}
+                            </div>
+
+                            {/* Main info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-foreground text-sm leading-tight truncate">
+                                  {request.empresaNombre || `Empresa ID ${request.empresaId}`}
+                                </p>
+                                {statusBadge(request.status)}
+                              </div>
+                              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                                  {request.requestedByEmail}
+                                </span>
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                                  {relativeTime(request.requestedAt)}
+                                </span>
+                                {request.requestNote && (
+                                  <span className="flex items-center gap-1 text-xs text-muted-foreground max-w-xs truncate" title={request.requestNote}>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                                    {request.requestNote}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Quick actions (only pending) */}
+                            {isPending && !isConfirming && (
+                              <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
                                 <button
                                   type="button"
-                                  onClick={() => void handleAuthorizeRequest(request)}
-                                  disabled={actionLoadingId === request.id}
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                                  onClick={() => setConfirmingId({ id: request.id, action: 'authorize' })}
+                                  disabled={isActioning}
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-40 whitespace-nowrap"
                                 >
-                                  {actionLoadingId === request.id ? (
-                                    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>
-                                  ) : (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                  )}
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                                   Autorizar
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => void handleDeactivateRequest(request)}
-                                  disabled={actionLoadingId === request.id}
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+                                  onClick={() => setConfirmingId({ id: request.id, action: 'reject' })}
+                                  disabled={isActioning}
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-40 whitespace-nowrap"
                                 >
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                                   Rechazar
                                 </button>
                               </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            )}
+
+                            {/* Chevron */}
+                            <svg
+                              width="14" height="14"
+                              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                              className={cn('flex-shrink-0 text-muted-foreground transition-transform duration-200', selectedRequest?.id === request.id && 'rotate-180')}
+                            >
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          </div>
+
+                          {/* Confirm strip */}
+                          {isConfirming && (
+                            <div className={cn(
+                              'mx-5 mb-4 rounded-xl border px-4 py-3 flex items-center justify-between gap-4',
+                              confirmingId?.action === 'authorize'
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : 'bg-red-50 border-red-200'
+                            )}>
+                              <p className={cn('text-xs font-medium', confirmingId?.action === 'authorize' ? 'text-emerald-800' : 'text-red-800')}>
+                                {confirmingId?.action === 'authorize'
+                                  ? `Confirmar activacion de dev mode para ${request.empresaNombre}?`
+                                  : `Confirmar rechazo de la solicitud de ${request.empresaNombre}?`}
+                              </p>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingId(null)}
+                                  className="text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isActioning}
+                                  onClick={() => {
+                                    if (confirmingId?.action === 'authorize') void handleAuthorizeRequest(request)
+                                    else void handleDeactivateRequest(request)
+                                  }}
+                                  className={cn(
+                                    'inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50',
+                                    confirmingId?.action === 'authorize'
+                                      ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                      : 'bg-red-600 text-white hover:bg-red-700'
+                                  )}
+                                >
+                                  {isActioning ? (
+                                    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>
+                                  ) : null}
+                                  {confirmingId?.action === 'authorize' ? 'Si, activar' : 'Si, rechazar'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Expanded detail panel */}
+                          {selectedRequest?.id === request.id && !isConfirming && (
+                            <div className="border-t border-border mx-0">
+                              <div className="px-5 py-4 bg-secondary/30 rounded-b-xl">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-3">
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Request ID</p>
+                                    <p className="text-sm font-mono text-foreground">#{request.id}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Empresa ID</p>
+                                    <p className="text-sm font-mono text-foreground truncate">{request.empresaId}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Solicitante</p>
+                                    <p className="text-sm text-foreground truncate">{request.requestedByEmail}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Fecha exacta</p>
+                                    <p className="text-sm text-foreground">{new Date(request.requestedAt).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                  </div>
+                                  <div className="col-span-2">
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Nota de la solicitud</p>
+                                    <p className="text-sm text-foreground">{request.requestNote || <span className="italic text-muted-foreground/60">Sin nota proporcionada</span>}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
-                ) : null}
+                )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* ── ALTA LICENCIA ─────────────────────────── */}
           {activeView === 'license-setup' && (
