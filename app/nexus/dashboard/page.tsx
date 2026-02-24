@@ -226,6 +226,37 @@ interface DashboardStats {
 
 /* ── Page ────────────────────�����──────────────────────────── */
 
+/* ── Anuncios toggle ────────────────────────────────────── */
+function AnuncioToggle({ checked, onChange, disabled }: { checked: boolean; onChange: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      disabled={disabled}
+      className={cn(
+        'relative inline-flex items-center w-11 h-6 rounded-full border-2 transition-all duration-300 disabled:opacity-50 flex-shrink-0',
+        checked ? 'bg-emerald-500 border-emerald-500' : 'bg-secondary border-border'
+      )}
+    >
+      <span className={cn('absolute w-4 h-4 rounded-full bg-card shadow-sm transition-all duration-300', checked ? 'left-6' : 'left-1')} />
+    </button>
+  )
+}
+
+/* ── License helpers ────────────────────────────────────── */
+function getLicenseStatus(pct: number): 'critical' | 'warning' | 'ok' {
+  if (pct >= 90) return 'critical'
+  if (pct >= 70) return 'warning'
+  return 'ok'
+}
+const licenseStatusMeta = {
+  critical: { label: 'Critico',     bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     bar: 'bg-red-500',   dot: 'bg-red-500'    },
+  warning:  { label: 'Advertencia', bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   bar: 'bg-amber-500', dot: 'bg-amber-500'  },
+  ok:       { label: 'Normal',      bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-accent',    dot: 'bg-emerald-500'},
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [session, setSession] = useState<NexusSession | null>(null)
@@ -924,6 +955,33 @@ export default function DashboardPage() {
     if (view === 'licenses') void loadLicenses()
     if (view === 'dev-mode') void loadDevModeEmpresas()
   }
+
+  /* ── Anuncios derived ── */
+  const anunciosActiveCount = anuncios.filter(a => a.activo).length
+
+  /* ── Empresas derived ── */
+  const parentEmpresas = empresas.filter(e => !e.parent_id)
+  const filteredEmpresas = parentEmpresas.filter(e =>
+    !empresasSearch ||
+    e.nombre.toLowerCase().includes(empresasSearch.toLowerCase()) ||
+    e.rfc.toLowerCase().includes(empresasSearch.toLowerCase()) ||
+    (e.db_nombre_contpaqi ?? '').toLowerCase().includes(empresasSearch.toLowerCase())
+  )
+
+  /* ── Licenses derived ── */
+  const licensesWithPct = licenses.map(l => {
+    const pct = l.max_usuarios > 0 ? Math.round(((l.usuarios_activos ?? 0) / l.max_usuarios) * 100) : 0
+    return { ...l, pct, status: getLicenseStatus(pct) as 'critical' | 'warning' | 'ok' }
+  })
+  const licensesCriticalCount = licensesWithPct.filter(l => l.status === 'critical').length
+  const licensesWarningCount  = licensesWithPct.filter(l => l.status === 'warning').length
+  const filteredLicenses = licensesWithPct.filter(l => {
+    const matchSearch = !licensesSearch ||
+      (l.empresa_nombre ?? '').toLowerCase().includes(licensesSearch.toLowerCase()) ||
+      l.empresa_id.toLowerCase().includes(licensesSearch.toLowerCase())
+    const matchFilter = licensesFilter === 'all' || l.status === licensesFilter
+    return matchSearch && matchFilter
+  })
 
   /* ── Session loading ── */
   if (!session) {
@@ -1730,28 +1788,7 @@ export default function DashboardPage() {
           )}
 
           {/* ── ANUNCIOS ──────────────────────────────── */}
-          {activeView === 'anuncios' && (() => {
-            const activeCount = anuncios.filter(a => a.activo).length
-
-            function AnuncioToggle({ checked, onChange, disabled }: { checked: boolean; onChange: () => void; disabled?: boolean }) {
-              return (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={checked}
-                  onClick={onChange}
-                  disabled={disabled}
-                  className={cn(
-                    'relative inline-flex items-center w-11 h-6 rounded-full border-2 transition-all duration-300 disabled:opacity-50 flex-shrink-0',
-                    checked ? 'bg-emerald-500 border-emerald-500' : 'bg-secondary border-border'
-                  )}
-                >
-                  <span className={cn('absolute w-4 h-4 rounded-full bg-card shadow-sm transition-all duration-300', checked ? 'left-6' : 'left-1')} />
-                </button>
-              )
-            }
-
-            return (
+          {activeView === 'anuncios' && (
               <div className="max-w-5xl space-y-5">
 
                 {/* Toast */}
@@ -1784,9 +1821,9 @@ export default function DashboardPage() {
 
                 {/* Stat pills */}
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className={cn('flex items-center gap-2 px-3.5 py-2 rounded-xl border', activeCount > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-secondary border-border')}>
-                    <span className={cn('w-2 h-2 rounded-full', activeCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30')} />
-                    <span className={cn('text-xs font-semibold', activeCount > 0 ? 'text-emerald-700' : 'text-muted-foreground')}>{activeCount} activo{activeCount !== 1 ? 's' : ''}</span>
+                  <div className={cn('flex items-center gap-2 px-3.5 py-2 rounded-xl border', anunciosActiveCount > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-secondary border-border')}>
+                    <span className={cn('w-2 h-2 rounded-full', anunciosActiveCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30')} />
+                    <span className={cn('text-xs font-semibold', anunciosActiveCount > 0 ? 'text-emerald-700' : 'text-muted-foreground')}>{anunciosActiveCount} activo{anunciosActiveCount !== 1 ? 's' : ''}</span>
                   </div>
                   <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-secondary border border-border">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
@@ -2108,20 +2145,10 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
-            )
-          })()}
+            )}
 
           {/* ── EMPRESAS ──────────────────────────────── */}
-          {activeView === 'empresas' && (() => {
-            const parentEmpresas = empresas.filter(e => !e.parent_id)
-            const filtered = parentEmpresas.filter(e =>
-              !empresasSearch ||
-              e.nombre.toLowerCase().includes(empresasSearch.toLowerCase()) ||
-              e.rfc.toLowerCase().includes(empresasSearch.toLowerCase()) ||
-              (e.db_nombre_contpaqi ?? '').toLowerCase().includes(empresasSearch.toLowerCase())
-            )
-
-            return (
+          {activeView === 'empresas' && (
               <div className="max-w-5xl space-y-5">
                 {/* Header */}
                 <div className="flex items-start justify-between gap-4">
@@ -2167,7 +2194,7 @@ export default function DashboardPage() {
                 {/* Content */}
                 {empresasLoading ? (
                   <LoadingState text="Cargando empresas..." />
-                ) : filtered.length === 0 && !empresasError ? (
+                ) : filteredEmpresas.length === 0 && !empresasError ? (
                   empresasSearch ? (
                     <div className="flex flex-col items-center gap-3 py-16 text-center">
                       <div className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center">
@@ -2180,7 +2207,7 @@ export default function DashboardPage() {
                   )
                 ) : (
                   <div className="grid gap-3">
-                    {filtered.map((empresa) => {
+                    {filteredEmpresas.map((empresa) => {
                       const isExpanded = expandedEmpresaId === empresa.id
                       const hasSucursales = empresa.children && empresa.children.length > 0
                       const hasDB = Boolean(empresa.db_nombre_contpaqi)
@@ -2284,8 +2311,7 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
-            )
-          })()}
+            )}
 
           {/* ── DEV MODE ──────────────────────────────── */}
           {activeView === 'dev-mode' && (() => {
@@ -2523,36 +2549,7 @@ export default function DashboardPage() {
           })()}
 
           {/* ── LICENSES ──────────────────────────────── */}
-          {activeView === 'licenses' && (() => {
-            function getLicenseStatus(pct: number): 'critical' | 'warning' | 'ok' {
-              if (pct >= 90) return 'critical'
-              if (pct >= 70) return 'warning'
-              return 'ok'
-            }
-
-            const statusMeta = {
-              critical: { label: 'Critico', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500', dot: 'bg-red-500' },
-              warning:  { label: 'Advertencia', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', bar: 'bg-amber-500', dot: 'bg-amber-500' },
-              ok:       { label: 'Normal', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-accent', dot: 'bg-emerald-500' },
-            }
-
-            const withPct = licenses.map(l => {
-              const pct = l.max_usuarios > 0 ? Math.round(((l.usuarios_activos ?? 0) / l.max_usuarios) * 100) : 0
-              return { ...l, pct, status: getLicenseStatus(pct) as 'critical' | 'warning' | 'ok' }
-            })
-
-            const criticalCount = withPct.filter(l => l.status === 'critical').length
-            const warningCount  = withPct.filter(l => l.status === 'warning').length
-
-            const filtered = withPct.filter(l => {
-              const matchSearch = !licensesSearch ||
-                (l.empresa_nombre ?? '').toLowerCase().includes(licensesSearch.toLowerCase()) ||
-                l.empresa_id.toLowerCase().includes(licensesSearch.toLowerCase())
-              const matchFilter = licensesFilter === 'all' || l.status === licensesFilter
-              return matchSearch && matchFilter
-            })
-
-            return (
+          {activeView === 'licenses' && (
               <div className="max-w-5xl space-y-5">
                 {/* Header */}
                 <div className="flex items-start justify-between gap-4">
@@ -2567,7 +2564,7 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Status filter pills */}
                   {(['all', 'critical', 'warning', 'ok'] as const).map(f => {
-                    const counts = { all: withPct.length, critical: criticalCount, warning: warningCount, ok: withPct.length - criticalCount - warningCount }
+                    const counts = { all: licensesWithPct.length, critical: licensesCriticalCount, warning: licensesWarningCount, ok: licensesWithPct.length - licensesCriticalCount - licensesWarningCount }
                     const labels = { all: 'Todas', critical: 'Critico', warning: 'Advertencia', ok: 'Normal' }
                     const active = licensesFilter === f
                     return (
@@ -2616,15 +2613,15 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Alerts banner */}
-                {(criticalCount > 0 || warningCount > 0) && !licensesLoading && (
+                {(licensesCriticalCount > 0 || licensesWarningCount > 0) && !licensesLoading && (
                   <div className={cn(
                     'flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium',
-                    criticalCount > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'
+                    licensesCriticalCount > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'
                   )}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                    {criticalCount > 0
-                      ? `${criticalCount} empresa${criticalCount !== 1 ? 's' : ''} con uso critico de licencias (90%+)`
-                      : `${warningCount} empresa${warningCount !== 1 ? 's' : ''} con uso elevado de licencias (70%+)`
+                    {licensesCriticalCount > 0
+                      ? `${licensesCriticalCount} empresa${licensesCriticalCount !== 1 ? 's' : ''} con uso critico de licencias (90%+)`
+                      : `${licensesWarningCount} empresa${licensesWarningCount !== 1 ? 's' : ''} con uso elevado de licencias (70%+)`
                     }
                   </div>
                 )}
@@ -2635,7 +2632,7 @@ export default function DashboardPage() {
                 {/* Content */}
                 {licensesLoading ? (
                   <LoadingState text="Cargando licencias..." />
-                ) : filtered.length === 0 && !licensesError ? (
+                ) : filteredLicenses.length === 0 && !licensesError ? (
                   licensesSearch || licensesFilter !== 'all' ? (
                     <div className="flex flex-col items-center gap-3 py-16 text-center">
                       <div className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center">
@@ -2648,8 +2645,8 @@ export default function DashboardPage() {
                   )
                 ) : (
                   <div className="grid gap-3">
-                    {filtered.map((license) => {
-                      const meta = statusMeta[license.status]
+                    {filteredLicenses.map((license) => {
+                      const meta = licenseStatusMeta[license.status]
                       const sesionPct = license.max_usuarios_conectados > 0
                         ? Math.round(((license.sesiones_activas ?? 0) / license.max_usuarios_conectados) * 100)
                         : 0
@@ -2762,8 +2759,7 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
-            )
-          })()}
+            )}
         </div>
       </main>
     </div>
