@@ -10,9 +10,13 @@ import { cn } from '@/lib/utils'
 import {
   StatCard,
   ActivityFeed,
-  WeeklyChart,
-  PermissionsWidget,
+  LicenseUsageChart,
+  PendingRequestsWidget,
   SystemStatus,
+  type ActivityItem,
+  type LicenseBarItem,
+  type PendingRequestItem,
+  type ServiceStatus,
 } from '@/components/nexus/dashboard-widgets'
 
 /* ── Shared primitives ─────────────────────────────────── */
@@ -136,58 +140,6 @@ function InputField({
 
 /* ── Types ─────────────────────────────────────────────── */
 
-const stats = [
-  {
-    label: 'Empresas registradas',
-    value: '12',
-    change: '8.3%',
-    positive: true,
-    accent: true,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Usuarios activos',
-    value: '248',
-    change: '12.1%',
-    positive: true,
-    accent: false,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Reportes este mes',
-    value: '1,847',
-    change: '3.2%',
-    positive: false,
-    accent: false,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Jobs ejecutados',
-    value: '5,293',
-    change: '24.7%',
-    positive: true,
-    accent: false,
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-  },
-]
-
 interface DevModeRequest {
   id: number
   empresaId: string
@@ -264,6 +216,14 @@ interface EmpresaDevMode {
   children: Empresa[]
 }
 
+/* ── Dashboard Stats ────────────────────────────────────── */
+interface DashboardStats {
+  empresas: number
+  usuariosActivos: number
+  sesionesActivas: number
+  requestsPendientes: number
+}
+
 /* ── Page ───────────────────────────────────────────────── */
 
 export default function DashboardPage() {
@@ -271,6 +231,23 @@ export default function DashboardPage() {
   const [session, setSession] = useState<NexusSession | null>(null)
   const [greeting, setGreeting] = useState('Bienvenido')
   const [activeView, setActiveView] = useState<DashboardView>('dashboard')
+
+  // Dashboard overview (real data)
+  const [dashStats, setDashStats] = useState<DashboardStats | null>(null)
+  const [dashStatsLoading, setDashStatsLoading] = useState(false)
+  const [dashActivityItems, setDashActivityItems] = useState<ActivityItem[]>([])
+  const [dashActivityLoading, setDashActivityLoading] = useState(false)
+  const [dashLicenseItems, setDashLicenseItems] = useState<LicenseBarItem[]>([])
+  const [dashLicenseLoading, setDashLicenseLoading] = useState(false)
+  const [dashPendingItems, setDashPendingItems] = useState<PendingRequestItem[]>([])
+  const [dashPendingLoading, setDashPendingLoading] = useState(false)
+  const [dashServices, setDashServices] = useState<ServiceStatus[]>([
+    { name: 'API Gateway', status: 'checking' },
+    { name: 'Auth Service', status: 'checking' },
+    { name: 'Dev Mode API', status: 'checking' },
+    { name: 'Anuncios API', status: 'checking' },
+  ])
+  const [dashServicesLoading, setDashServicesLoading] = useState(false)
 
   // Dev requests
   const [devRequests, setDevRequests] = useState<DevModeRequest[]>([])
@@ -333,11 +310,149 @@ export default function DashboardPage() {
     if (h < 12) setGreeting('Buenos días')
     else if (h < 19) setGreeting('Buenas tardes')
     else setGreeting('Buenas noches')
+    // Load dashboard data on mount
+    void loadDashboardData(s.token)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
   function handleLogout() {
     clearSession()
     router.replace('/nexus/login')
+  }
+
+  async function loadDashboardData(token: string) {
+    // ── Stats: empresas count + license aggregates ──────────
+    setDashStatsLoading(true)
+    try {
+      const compRes = await fetch('https://montekvps.cloud/api/companies', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const compPayload = compRes.ok ? await compRes.json() : []
+      const companies: Empresa[] = Array.isArray(compPayload)
+        ? compPayload
+        : Array.isArray(compPayload?.data) ? compPayload.data : []
+
+      const parentCompanies = companies.filter(c => !c.parent_id)
+
+      // Fetch all capacities in parallel
+      const capacities = await Promise.allSettled(
+        parentCompanies.map((emp) =>
+          fetch(`https://montekvps.cloud/api/licenses/empresa/${emp.id}/capacity`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).then(r => r.ok ? r.json() : null)
+        )
+      )
+
+      let totalActivos = 0
+      let totalSesiones = 0
+      const licenseBarItems: LicenseBarItem[] = []
+
+      parentCompanies.forEach((emp, idx) => {
+        const cap = capacities[idx].status === 'fulfilled' ? capacities[idx].value : null
+        const activos = cap?.usuarios_activos ?? 0
+        const max = cap?.max_usuarios ?? 0
+        const sesiones = cap?.sesiones_activas ?? 0
+        totalActivos += activos
+        totalSesiones += sesiones
+        if (max > 0) {
+          licenseBarItems.push({ name: emp.nombre, activos, max })
+        }
+      })
+
+      setDashStats({
+        empresas: parentCompanies.length,
+        usuariosActivos: totalActivos,
+        sesionesActivas: totalSesiones,
+        requestsPendientes: 0, // will update after
+      })
+      setDashLicenseItems(licenseBarItems)
+    } catch {
+      // silently fail — stats stay null
+    } finally {
+      setDashStatsLoading(false)
+      setDashLicenseLoading(false)
+    }
+
+    // ── Activity: recent dev-mode requests ──────────────────
+    setDashActivityLoading(true)
+    setDashPendingLoading(true)
+    try {
+      const reqRes = await fetch(
+        'https://montekvps.cloud/api/dev-mode/requests?page=1&limit=20',
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (reqRes.ok) {
+        const reqPayload = await reqRes.json()
+        const rows: DevModeRequest[] = Array.isArray(reqPayload?.data?.rows)
+          ? reqPayload.data.rows
+          : []
+
+        const allRows = rows.slice(0, 8)
+        const activityItems: ActivityItem[] = allRows.map((r) => ({
+          user: r.empresaNombre || `Empresa ${r.empresaId}`,
+          action: `Dev-mode request · ${r.requestedByEmail}`,
+          time: r.requestedAt ? (() => {
+            const date = new Date(r.requestedAt)
+            const now = new Date()
+            const diffMs = now.getTime() - date.getTime()
+            const diffMin = Math.floor(diffMs / 60000)
+            if (diffMin < 1) return 'Ahora'
+            if (diffMin < 60) return `Hace ${diffMin} min`
+            const diffHrs = Math.floor(diffMin / 60)
+            if (diffHrs < 24) return `Hace ${diffHrs} hr${diffHrs !== 1 ? 's' : ''}`
+            return `Hace ${Math.floor(diffHrs / 24)} día${Math.floor(diffHrs / 24) !== 1 ? 's' : ''}`
+          })() : '',
+          type: r.status === 'pending' ? 'request' : 'devmode',
+        }))
+        setDashActivityItems(activityItems)
+
+        const pending: PendingRequestItem[] = rows
+          .filter(r => r.status === 'pending')
+          .slice(0, 5)
+          .map(r => ({
+            empresaNombre: r.empresaNombre || `Empresa ${r.empresaId}`,
+            requestedByEmail: r.requestedByEmail,
+            requestedAt: r.requestedAt,
+          }))
+        setDashPendingItems(pending)
+
+        // Update pending count in stats
+        const pendingCount = rows.filter(r => r.status === 'pending').length
+        setDashStats(prev => prev ? { ...prev, requestsPendientes: pendingCount } : prev)
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setDashActivityLoading(false)
+      setDashPendingLoading(false)
+    }
+
+    // ── System status: ping each endpoint ───────────────────
+    setDashServicesLoading(true)
+    const endpoints: { name: string; url: string }[] = [
+      { name: 'API Gateway', url: 'https://montekvps.cloud/api/companies' },
+      { name: 'Auth Service', url: 'https://montekvps.cloud/api/companies' },
+      { name: 'Dev Mode API', url: 'https://montekvps.cloud/api/dev-mode/requests?page=1&limit=1' },
+      { name: 'Anuncios API', url: 'https://montekvps.cloud/api/anuncios' },
+    ]
+
+    const serviceResults = await Promise.allSettled(
+      endpoints.map(async (ep) => {
+        const start = Date.now()
+        const res = await fetch(ep.url, { headers: { Authorization: `Bearer ${token}` } })
+        const latency = Date.now() - start
+        return { name: ep.name, ok: res.ok || res.status === 401 || res.status === 403, latency }
+      })
+    )
+
+    setDashServices(
+      serviceResults.map((r, i) => ({
+        name: endpoints[i].name,
+        status: (r.status === 'fulfilled' && r.value.ok) ? 'online' : 'offline',
+        latency: r.status === 'fulfilled' ? `${r.value.latency}ms` : undefined,
+      }))
+    )
+    setDashServicesLoading(false)
   }
 
   async function loadDevRequests() {
@@ -656,6 +771,7 @@ export default function DashboardPage() {
 
   function handleSelectView(view: DashboardView) {
     setActiveView(view)
+    if (view === 'dashboard' && session?.token) void loadDashboardData(session.token)
     if (view === 'devs-request') void loadDevRequests()
     if (view === 'anuncios') void loadAnuncios()
     if (view === 'empresas') void loadEmpresas()
@@ -759,23 +875,71 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Stats */}
+              {/* Stats — real data */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {stats.map((s) => <StatCard key={s.label} {...s} />)}
+                <StatCard
+                  label="Empresas registradas"
+                  value={dashStats?.empresas ?? '—'}
+                  loading={dashStatsLoading}
+                  accent
+                  icon={
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Usuarios activos"
+                  value={dashStats?.usuariosActivos ?? '—'}
+                  loading={dashStatsLoading}
+                  icon={
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Sesiones activas"
+                  value={dashStats?.sesionesActivas ?? '—'}
+                  loading={dashStatsLoading}
+                  icon={
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Requests pendientes"
+                  value={dashStats?.requestsPendientes ?? '—'}
+                  sub={dashStats?.requestsPendientes ? `${dashStats.requestsPendientes} sin revisar` : undefined}
+                  positive={dashStats?.requestsPendientes === 0}
+                  loading={dashStatsLoading}
+                  icon={
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                  }
+                />
               </div>
 
-              {/* Middle */}
+              {/* Middle row */}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div className="xl:col-span-2">
-                  <ActivityFeed />
+                  <ActivityFeed items={dashActivityItems} loading={dashActivityLoading} />
                 </div>
-                <WeeklyChart />
+                <LicenseUsageChart items={dashLicenseItems} loading={dashLicenseLoading} />
               </div>
 
-              {/* Bottom */}
+              {/* Bottom row */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <PermissionsWidget />
-                <SystemStatus />
+                <PendingRequestsWidget
+                  items={dashPendingItems}
+                  loading={dashPendingLoading}
+                  onGoToRequests={() => handleSelectView('devs-request')}
+                />
+                <SystemStatus services={dashServices} loading={dashServicesLoading} />
               </div>
             </div>
           )}
