@@ -6,6 +6,7 @@ import { loadSession, clearSession } from '@/lib/auth'
 import type { NexusSession } from '@/lib/auth'
 import { DashboardSidebar } from '@/components/nexus/dashboard-sidebar'
 import type { DashboardView } from '@/components/nexus/dashboard-sidebar'
+import { cn } from '@/lib/utils'
 import {
   StatCard,
   ActivityFeed,
@@ -13,6 +14,127 @@ import {
   PermissionsWidget,
   SystemStatus,
 } from '@/components/nexus/dashboard-widgets'
+
+/* ── Shared primitives ─────────────────────────────────── */
+
+function SectionHeader({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description?: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 mb-6">
+      <div>
+        <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+          {title}
+        </h2>
+        {description && <p className="text-sm text-muted-foreground mt-0.5">{description}</p>}
+      </div>
+      {action}
+    </div>
+  )
+}
+
+function ReloadButton({ onClick, loading }: { onClick: () => void; loading?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-accent/40 transition-all disabled:opacity-50"
+    >
+      <svg
+        className={cn('w-3 h-3', loading && 'animate-spin')}
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      >
+        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+      </svg>
+      {loading ? 'Cargando...' : 'Recargar'}
+    </button>
+  )
+}
+
+function LoadingState({ text = 'Cargando...' }: { text?: string }) {
+  return (
+    <div className="flex items-center gap-3 py-12 justify-center">
+      <div className="w-5 h-5 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+      <p className="text-sm text-muted-foreground">{text}</p>
+    </div>
+  )
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-12 text-center">
+      <div className="w-10 h-10 rounded-full bg-destructive/10 border border-destructive/20 flex items-center justify-center text-destructive">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      </div>
+      <p className="text-sm text-destructive font-medium">{message}</p>
+      {onRetry && (
+        <button onClick={onRetry} className="text-xs text-accent hover:underline">Intentar de nuevo</button>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-16 text-center">
+      <div className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center text-muted-foreground">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      </div>
+      <p className="text-sm text-muted-foreground">{text}</p>
+    </div>
+  )
+}
+
+function SuccessBanner({ message }: { message: string }) {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm mb-4">
+      <svg width="14" height="14" className="flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+      {message}
+    </div>
+  )
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3 rounded-lg border border-destructive/25 bg-destructive/8 text-destructive text-sm mb-4">
+      <svg width="14" height="14" className="flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+      {message}
+    </div>
+  )
+}
+
+function InputField({
+  label,
+  hint,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-foreground">{label}</label>
+      <input
+        {...props}
+        className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-all duration-150"
+      />
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
+/* ── Types ─────────────────────────────────────────────── */
 
 const stats = [
   {
@@ -22,8 +144,8 @@ const stats = [
     positive: true,
     accent: true,
     icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
       </svg>
     ),
   },
@@ -34,7 +156,7 @@ const stats = [
     positive: true,
     accent: false,
     icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
         <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
@@ -47,7 +169,7 @@ const stats = [
     positive: false,
     accent: false,
     icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
       </svg>
     ),
@@ -59,7 +181,7 @@ const stats = [
     positive: true,
     accent: false,
     icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
       </svg>
     ),
@@ -115,6 +237,7 @@ interface Empresa {
   db_nombre_contpaqi: string | null
   es_cliente_principal: boolean
   children: Empresa[]
+  parent_id?: string
 }
 
 interface License {
@@ -141,30 +264,23 @@ interface EmpresaDevMode {
   children: Empresa[]
 }
 
-interface LicenseCapacity {
-  license_id: string
-  empresa_id: string
-  max_usuarios: number
-  max_usuarios_conectados: number
-  usuarios_activos: number
-  usuarios_disponibles: number
-  sesiones_activas: number
-  sesiones_disponibles: number
-  session_idle_seconds: number
-}
-
+/* ── Page ───────────────────────────────────────────────── */
 
 export default function DashboardPage() {
   const router = useRouter()
   const [session, setSession] = useState<NexusSession | null>(null)
   const [greeting, setGreeting] = useState('Bienvenido')
   const [activeView, setActiveView] = useState<DashboardView>('dashboard')
+
+  // Dev requests
   const [devRequests, setDevRequests] = useState<DevModeRequest[]>([])
   const [devRequestsMeta, setDevRequestsMeta] = useState({ total: 0, page: 1, limit: 20 })
   const [devRequestsLoading, setDevRequestsLoading] = useState(false)
   const [devRequestsError, setDevRequestsError] = useState<string | null>(null)
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+
+  // License
   const [licenseForm, setLicenseForm] = useState<LicenseSetupPayload>({
     empresa_nombre: '',
     empresa_rfc: '',
@@ -175,6 +291,8 @@ export default function DashboardPage() {
   const [licenseLoading, setLicenseLoading] = useState(false)
   const [licenseMessage, setLicenseMessage] = useState<string | null>(null)
   const [licenseError, setLicenseError] = useState<string | null>(null)
+
+  // Anuncios
   const [anuncios, setAnuncios] = useState<Anuncio[]>([])
   const [anunciosLoading, setAnunciosLoading] = useState(false)
   const [anunciosError, setAnunciosError] = useState<string | null>(null)
@@ -187,12 +305,18 @@ export default function DashboardPage() {
   const [editingAnuncioLoading, setEditingAnuncioLoading] = useState(false)
   const [uploadingImageId, setUploadingImageId] = useState<number | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<number | null>(null)
+
+  // Empresas
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresasLoading, setEmpresasLoading] = useState(false)
   const [empresasError, setEmpresasError] = useState<string | null>(null)
+
+  // Licenses
   const [licenses, setLicenses] = useState<License[]>([])
   const [licensesLoading, setLicensesLoading] = useState(false)
   const [licensesError, setLicensesError] = useState<string | null>(null)
+
+  // Dev mode
   const [empresasDevMode, setEmpresasDevMode] = useState<EmpresaDevMode[]>([])
   const [devModeLoading, setDevModeLoading] = useState(false)
   const [devModeError, setDevModeError] = useState<string | null>(null)
@@ -205,7 +329,6 @@ export default function DashboardPage() {
       return
     }
     setSession(s)
-
     const h = new Date().getHours()
     if (h < 12) setGreeting('Buenos días')
     else if (h < 19) setGreeting('Buenas tardes')
@@ -218,721 +341,334 @@ export default function DashboardPage() {
   }
 
   async function loadDevRequests() {
-    if (!session?.token) {
-      setDevRequestsError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setDevRequestsLoading(true)
     setDevRequestsError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/dev-mode/requests?status=pending&page=1&limit=20', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
+      const res = await fetch('https://montekvps.cloud/api/dev-mode/requests?status=pending&page=1&limit=20', {
+        headers: { Authorization: `Bearer ${session.token}` },
       })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(`Error HTTP ${response.status}`)
-      }
-
-      const payload = (await response.json()) as DevModeResponse
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
+      const payload = (await res.json()) as DevModeResponse
       const rows = Array.isArray(payload?.data?.rows) ? payload.data.rows : []
-
       setDevRequests(rows)
-      setDevRequestsMeta({
-        total: Number(payload?.data?.total ?? rows.length),
-        page: Number(payload?.data?.page ?? 1),
-        limit: Number(payload?.data?.limit ?? 20),
-      })
-      console.log('Devs Request API:', payload)
-    } catch (error) {
-      setDevRequestsError(error instanceof Error ? error.message : 'No se pudieron cargar los requests')
+      setDevRequestsMeta({ total: Number(payload?.data?.total ?? rows.length), page: Number(payload?.data?.page ?? 1), limit: Number(payload?.data?.limit ?? 20) })
+    } catch (e) {
+      setDevRequestsError(e instanceof Error ? e.message : 'No se pudieron cargar los requests')
     } finally {
       setDevRequestsLoading(false)
     }
   }
 
-  function handleSelectView(view: DashboardView) {
-    setActiveView(view)
-    if (view === 'devs-request') {
-      void loadDevRequests()
-    }
-    if (view === 'anuncios') {
-      void loadAnuncios()
-    }
-    if (view === 'empresas') {
-      void loadEmpresas()
-    }
-    if (view === 'licenses') {
-      void loadLicenses()
-    }
-    if (view === 'dev-mode') {
-      void loadDevModeEmpresas()
-    }
-  }
-
   async function loadAnuncios() {
-    if (!session?.token) {
-      setAnunciosError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setAnunciosLoading(true)
     setAnunciosError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/anuncios', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(`Error HTTP ${response.status}`)
-      }
-
-      const payload = await response.json()
+      const res = await fetch('https://montekvps.cloud/api/anuncios', { headers: { Authorization: `Bearer ${session.token}` } })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
+      const payload = await res.json()
       const data = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []
       setAnuncios(data.filter((item): item is Anuncio => typeof item === 'object' && item !== null))
-    } catch (error) {
-      setAnunciosError(error instanceof Error ? error.message : 'No se pudieron cargar los anuncios')
+    } catch (e) {
+      setAnunciosError(e instanceof Error ? e.message : 'No se pudieron cargar los anuncios')
     } finally {
       setAnunciosLoading(false)
     }
   }
 
   async function handleCreateAnuncio() {
-    if (!session?.token) {
-      setAnunciosError('Sesión inválida: token no disponible')
-      return
-    }
-
-    if (!anuncioForm.titulo || !anuncioForm.descripcion) {
+    if (!session?.token || !anuncioForm.titulo || !anuncioForm.descripcion) {
       setAnunciosError('Completa título y descripción')
       return
     }
-
     setAnuncioFormLoading(true)
     setAnuncioFormMessage(null)
     setAnunciosError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/anuncios', {
+      const res = await fetch('https://montekvps.cloud/api/anuncios', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          titulo: anuncioForm.titulo,
-          descripcion: anuncioForm.descripcion,
-          activo: anuncioForm.activo,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify(anuncioForm),
       })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       setAnuncioFormMessage('Anuncio creado correctamente.')
       setAnuncioForm({ titulo: '', descripcion: '', activo: true })
       await loadAnuncios()
-    } catch (error) {
-      setAnunciosError(error instanceof Error ? error.message : 'No se pudo crear el anuncio')
+    } catch (e) {
+      setAnunciosError(e instanceof Error ? e.message : 'No se pudo crear el anuncio')
     } finally {
       setAnuncioFormLoading(false)
     }
   }
 
   async function handleDeleteAnuncio(id: number) {
-    if (!session?.token) {
-      setAnunciosError('Sesión inválida: token no disponible')
-      return
-    }
-
-    if (!confirm('¿Estás seguro de que deseas eliminar este anuncio?')) {
-      return
-    }
-
+    if (!session?.token || !confirm('¿Estás seguro de que deseas eliminar este anuncio?')) return
     setAnuncioDeleteLoading(id)
     setAnunciosError(null)
-
     try {
-      const response = await fetch(`https://montekvps.cloud/api/anuncios/${id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
+      const res = await fetch(`https://montekvps.cloud/api/anuncios/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       await loadAnuncios()
-    } catch (error) {
-      setAnunciosError(error instanceof Error ? error.message : 'No se pudo eliminar el anuncio')
+    } catch (e) {
+      setAnunciosError(e instanceof Error ? e.message : 'No se pudo eliminar el anuncio')
     } finally {
       setAnuncioDeleteLoading(null)
     }
   }
 
   async function handleUpdateAnuncio(id: number) {
-    if (!session?.token) {
-      setAnunciosError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setEditingAnuncioLoading(true)
     setAnunciosError(null)
-
     try {
-      const response = await fetch(`https://montekvps.cloud/api/anuncios/${id}`, {
+      const res = await fetch(`https://montekvps.cloud/api/anuncios/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          titulo: editingAnuncioForm.titulo,
-          activo: editingAnuncioForm.activo,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify(editingAnuncioForm),
       })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
-      setAnunciosError(null)
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       setEditingAnuncioId(null)
       await loadAnuncios()
-    } catch (error) {
-      setAnunciosError(error instanceof Error ? error.message : 'No se pudo actualizar el anuncio')
+    } catch (e) {
+      setAnunciosError(e instanceof Error ? e.message : 'No se pudo actualizar el anuncio')
     } finally {
       setEditingAnuncioLoading(false)
     }
   }
 
   async function handleUploadAnuncioImage(id: number, file: File) {
-    if (!session?.token) {
-      setAnunciosError('Sesión inválida: token no disponible')
-      return
-    }
-
-    if (!file) {
-      setAnunciosError('Por favor selecciona una imagen')
-      return
-    }
-
+    if (!session?.token || !file) return
     setUploadingImageId(id)
     setAnunciosError(null)
-
     try {
       const formData = new FormData()
       formData.append('imagen', file)
-
-      const response = await fetch(`https://montekvps.cloud/api/anuncios/${id}/imagen`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: formData,
-      })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
+      const res = await fetch(`https://montekvps.cloud/api/anuncios/${id}/imagen`, { method: 'POST', headers: { Authorization: `Bearer ${session.token}` }, body: formData })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       await loadAnuncios()
-    } catch (error) {
-      setAnunciosError(error instanceof Error ? error.message : 'No se pudo subir la imagen')
+    } catch (e) {
+      setAnunciosError(e instanceof Error ? e.message : 'No se pudo subir la imagen')
     } finally {
       setUploadingImageId(null)
     }
   }
 
   async function handleDeleteAnuncioImage(id: number) {
-    if (!session?.token) {
-      setAnunciosError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setDeletingImageId(id)
     setAnunciosError(null)
-
     try {
-      const response = await fetch(`https://montekvps.cloud/api/anuncios/${id}/imagen`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
+      const res = await fetch(`https://montekvps.cloud/api/anuncios/${id}/imagen`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       await loadAnuncios()
-    } catch (error) {
-      setAnunciosError(error instanceof Error ? error.message : 'No se pudo eliminar la imagen')
+    } catch (e) {
+      setAnunciosError(e instanceof Error ? e.message : 'No se pudo eliminar la imagen')
     } finally {
       setDeletingImageId(null)
     }
   }
 
   async function loadEmpresas() {
-    if (!session?.token) {
-      setEmpresasError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setEmpresasLoading(true)
     setEmpresasError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/companies', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(`Error HTTP ${response.status}`)
-      }
-
-      const payload = await response.json()
+      const res = await fetch('https://montekvps.cloud/api/companies', { headers: { Authorization: `Bearer ${session.token}` } })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
+      const payload = await res.json()
       const data = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []
       setEmpresas(data.filter((item): item is Empresa => typeof item === 'object' && item !== null))
-    } catch (error) {
-      setEmpresasError(error instanceof Error ? error.message : 'No se pudieron cargar las empresas')
+    } catch (e) {
+      setEmpresasError(e instanceof Error ? e.message : 'No se pudieron cargar las empresas')
     } finally {
       setEmpresasLoading(false)
     }
   }
 
   async function loadLicenses() {
-    if (!session?.token) {
-      setLicensesError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setLicensesLoading(true)
     setLicensesError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/companies', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`Error HTTP ${response.status}`)
-      }
-
-      const payload = await response.json()
+      const res = await fetch('https://montekvps.cloud/api/companies', { headers: { Authorization: `Bearer ${session.token}` } })
+      if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
+      const payload = await res.json()
       const data = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []
-      
-      // Obtener capacidad de licencias para cada empresa
       const licensesData = await Promise.all(
         data
           .filter((item): item is Empresa => typeof item === 'object' && item !== null)
           .map(async (empresa) => {
-            const license: License = {
-              id: empresa.id,
-              empresa_id: empresa.id,
-              empresa_nombre: empresa.nombre,
-              max_usuarios: 0,
-              max_usuarios_conectados: 0,
-            }
-            
-            // Obtener capacidad de la empresa
+            const license: License = { id: empresa.id, empresa_id: empresa.id, empresa_nombre: empresa.nombre, max_usuarios: 0, max_usuarios_conectados: 0 }
             try {
-              const capacityResponse = await fetch(
-                `https://montekvps.cloud/api/licenses/empresa/${empresa.id}/capacity`,
-                {
-                  method: 'GET',
-                  headers: {
-                    Authorization: `Bearer ${session.token}`,
-                  },
-                }
-              )
-              
-              if (capacityResponse.ok) {
-                const capacityData = await capacityResponse.json()
-                license.license_id = capacityData?.license_id
-                license.max_usuarios = capacityData?.max_usuarios ?? 0
-                license.max_usuarios_conectados = capacityData?.max_usuarios_conectados ?? 0
-                license.usuarios_activos = capacityData?.usuarios_activos ?? 0
-                license.usuarios_disponibles = capacityData?.usuarios_disponibles ?? 0
-                license.sesiones_activas = capacityData?.sesiones_activas ?? 0
-                license.sesiones_disponibles = capacityData?.sesiones_disponibles ?? 0
-                license.session_idle_seconds = capacityData?.session_idle_seconds
+              const capRes = await fetch(`https://montekvps.cloud/api/licenses/empresa/${empresa.id}/capacity`, { headers: { Authorization: `Bearer ${session.token}` } })
+              if (capRes.ok) {
+                const cap = await capRes.json()
+                license.license_id = cap?.license_id
+                license.max_usuarios = cap?.max_usuarios ?? 0
+                license.max_usuarios_conectados = cap?.max_usuarios_conectados ?? 0
+                license.usuarios_activos = cap?.usuarios_activos ?? 0
+                license.usuarios_disponibles = cap?.usuarios_disponibles ?? 0
+                license.sesiones_activas = cap?.sesiones_activas ?? 0
+                license.sesiones_disponibles = cap?.sesiones_disponibles ?? 0
+                license.session_idle_seconds = cap?.session_idle_seconds
               }
             } catch {}
-            
             return license
           })
       )
       setLicenses(licensesData)
-    } catch (error) {
-      setLicensesError(error instanceof Error ? error.message : 'No se pudieron cargar las licencias')
+    } catch (e) {
+      setLicensesError(e instanceof Error ? e.message : 'No se pudieron cargar las licencias')
     } finally {
       setLicensesLoading(false)
     }
   }
 
   async function handleCreateLicense() {
-    if (!session?.token) {
-      setLicenseError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     if (!licenseForm.empresa_nombre || !licenseForm.empresa_rfc || !licenseForm.usuario_email) {
       setLicenseError('Completa empresa, RFC y correo del usuario')
       return
     }
-
     setLicenseLoading(true)
     setLicenseMessage(null)
     setLicenseError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/licenses/setup', {
+      const res = await fetch('https://montekvps.cloud/api/licenses/setup', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          empresa_nombre: licenseForm.empresa_nombre,
-          empresa_rfc: licenseForm.empresa_rfc,
-          usuario_email: licenseForm.usuario_email,
-          max_usuarios: Number(licenseForm.max_usuarios),
-          max_usuarios_conectados: Number(licenseForm.max_usuarios_conectados),
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ ...licenseForm, max_usuarios: Number(licenseForm.max_usuarios), max_usuarios_conectados: Number(licenseForm.max_usuarios_conectados) }),
       })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       setLicenseMessage('Licencia creada correctamente.')
-      setLicenseForm({
-        empresa_nombre: '',
-        empresa_rfc: '',
-        usuario_email: '',
-        max_usuarios: 5,
-        max_usuarios_conectados: 3,
-      })
-    } catch (error) {
-      setLicenseError(error instanceof Error ? error.message : 'No se pudo crear la licencia')
+      setLicenseForm({ empresa_nombre: '', empresa_rfc: '', usuario_email: '', max_usuarios: 5, max_usuarios_conectados: 3 })
+    } catch (e) {
+      setLicenseError(e instanceof Error ? e.message : 'No se pudo crear la licencia')
     } finally {
       setLicenseLoading(false)
     }
   }
 
   async function handleAuthorizeRequest(request: DevModeRequest) {
-    if (!session?.token) {
-      setDevRequestsError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setActionLoadingId(request.id)
     setActionMessage(null)
     setDevRequestsError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/dev-mode/toggle', {
+      const res = await fetch('https://montekvps.cloud/api/dev-mode/toggle', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          empresaId: request.empresaId,
-          enabled: true,
-          requestId: String(request.id),
-          note: 'Activación gestionada desde Nexus Admin',
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ empresaId: request.empresaId, enabled: true, requestId: String(request.id), note: 'Activación gestionada desde Nexus Admin' }),
       })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       setActionMessage('Request autorizada correctamente.')
       await loadDevRequests()
-    } catch (error) {
-      setDevRequestsError(error instanceof Error ? error.message : 'No se pudo autorizar la request')
+    } catch (e) {
+      setDevRequestsError(e instanceof Error ? e.message : 'No se pudo autorizar la request')
     } finally {
       setActionLoadingId(null)
     }
   }
 
   async function handleDeactivateRequest(request: DevModeRequest) {
-    if (!session?.token) {
-      setDevRequestsError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setActionLoadingId(request.id)
     setActionMessage(null)
     setDevRequestsError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/dev-mode/toggle', {
+      const res = await fetch('https://montekvps.cloud/api/dev-mode/toggle', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          empresaId: request.empresaId,
-          enabled: false,
-          requestId: String(request.id),
-          note: 'Solicitud rechazada desde Nexus Admin',
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ empresaId: request.empresaId, enabled: false, requestId: String(request.id), note: 'Solicitud rechazada desde Nexus Admin' }),
       })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       setActionMessage('Request rechazada correctamente.')
       await loadDevRequests()
-    } catch (error) {
-      setDevRequestsError(error instanceof Error ? error.message : 'No se pudo rechazar la request')
+    } catch (e) {
+      setDevRequestsError(e instanceof Error ? e.message : 'No se pudo rechazar la request')
     } finally {
       setActionLoadingId(null)
     }
   }
 
   async function loadDevModeEmpresas() {
-    if (!session?.token) {
-      setDevModeError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setDevModeLoading(true)
     setDevModeError(null)
-
     try {
-      // Primero obtenemos todas las empresas
-      const companiesResponse = await fetch('https://montekvps.cloud/api/companies', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      })
-
-      if (companiesResponse.status === 401 || companiesResponse.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!companiesResponse.ok) {
-        throw new Error(`Error HTTP ${companiesResponse.status}`)
-      }
-
-      const companiesPayload = await companiesResponse.json()
-      const companies = Array.isArray(companiesPayload) 
-        ? companiesPayload 
-        : Array.isArray(companiesPayload?.data) 
-          ? companiesPayload.data 
-          : []
-      
-      // Filtrar solo empresas padre (sin parent_id)
-      const parentCompanies = companies.filter(
-        (item): item is Empresa => 
-          typeof item === 'object' && item !== null && !item.parent_id
-      )
-
-      // Para cada empresa, obtener su estado dev-mode
+      const compRes = await fetch('https://montekvps.cloud/api/companies', { headers: { Authorization: `Bearer ${session.token}` } })
+      if (compRes.status === 401 || compRes.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!compRes.ok) throw new Error(`Error HTTP ${compRes.status}`)
+      const compPayload = await compRes.json()
+      const companies = Array.isArray(compPayload) ? compPayload : Array.isArray(compPayload?.data) ? compPayload.data : []
+      const parentCompanies = companies.filter((item): item is Empresa => typeof item === 'object' && item !== null && !item.parent_id)
       const empresasWithDevMode: EmpresaDevMode[] = await Promise.all(
         parentCompanies.map(async (empresa) => {
           try {
-            const statusResponse = await fetch(
-              `https://montekvps.cloud/api/dev-mode/status?empresaId=${empresa.id}`,
-              {
-                method: 'GET',
-                headers: {
-                  Authorization: `Bearer ${session.token}`,
-                },
-              }
-            )
-
-            if (statusResponse.ok) {
-              const statusData = await statusResponse.json()
-              // Usar has_permission si está disponible, sino usar enabled
-              const isEnabled = statusData?.has_permission ?? statusData?.enabled ?? false
-              return {
-                id: empresa.id,
-                nombre: empresa.nombre,
-                rfc: empresa.rfc,
-                dev_mode_enabled: isEnabled,
-                children: empresa.children || [],
-              }
-            } else {
-              // Si falla el status, asumir que está deshabilitado
-              return {
-                id: empresa.id,
-                nombre: empresa.nombre,
-                rfc: empresa.rfc,
-                dev_mode_enabled: false,
-                children: empresa.children || [],
-              }
+            const statusRes = await fetch(`https://montekvps.cloud/api/dev-mode/status?empresaId=${empresa.id}`, { headers: { Authorization: `Bearer ${session.token}` } })
+            if (statusRes.ok) {
+              const statusData = await statusRes.json()
+              return { id: empresa.id, nombre: empresa.nombre, rfc: empresa.rfc, dev_mode_enabled: statusData?.has_permission ?? statusData?.enabled ?? false, children: empresa.children || [] }
             }
-          } catch {
-            // En caso de error, asumir deshabilitado
-            return {
-              id: empresa.id,
-              nombre: empresa.nombre,
-              rfc: empresa.rfc,
-              dev_mode_enabled: false,
-              children: empresa.children || [],
-            }
-          }
+          } catch {}
+          return { id: empresa.id, nombre: empresa.nombre, rfc: empresa.rfc, dev_mode_enabled: false, children: empresa.children || [] }
         })
       )
-
       setEmpresasDevMode(empresasWithDevMode)
-    } catch (error) {
-      setDevModeError(error instanceof Error ? error.message : 'No se pudieron cargar las empresas')
+    } catch (e) {
+      setDevModeError(e instanceof Error ? e.message : 'No se pudieron cargar las empresas')
     } finally {
       setDevModeLoading(false)
     }
   }
 
   async function handleToggleDevMode(empresaId: string, currentStatus: boolean) {
-    if (!session?.token) {
-      setDevModeError('Sesión inválida: token no disponible')
-      return
-    }
-
+    if (!session?.token) return
     setTogglingDevModeId(empresaId)
     setDevModeError(null)
-
     try {
-      const response = await fetch('https://montekvps.cloud/api/dev-mode/toggle', {
+      const res = await fetch('https://montekvps.cloud/api/dev-mode/toggle', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          empresaId: empresaId,
-          enabled: !currentStatus,
-          note: 'Toggle gestionado desde Nexus Admin - Dev Mode',
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ empresaId, enabled: !currentStatus, note: 'Toggle gestionado desde Nexus Admin - Dev Mode' }),
       })
-
-      if (response.status === 401 || response.status === 403) {
-        clearSession()
-        router.replace('/nexus/login')
-        return
-      }
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({} as { message?: string }))
-        throw new Error(errorPayload?.message || `Error HTTP ${response.status}`)
-      }
-
-      // Recargar la lista después del toggle
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
       await loadDevModeEmpresas()
-    } catch (error) {
-      setDevModeError(error instanceof Error ? error.message : 'No se pudo cambiar el estado de dev-mode')
+    } catch (e) {
+      setDevModeError(e instanceof Error ? e.message : 'No se pudo cambiar el estado de dev-mode')
     } finally {
       setTogglingDevModeId(null)
     }
   }
 
+  function handleSelectView(view: DashboardView) {
+    setActiveView(view)
+    if (view === 'devs-request') void loadDevRequests()
+    if (view === 'anuncios') void loadAnuncios()
+    if (view === 'empresas') void loadEmpresas()
+    if (view === 'licenses') void loadLicenses()
+    if (view === 'dev-mode') void loadDevModeEmpresas()
+  }
+
+  /* ── Session loading ── */
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
           <p className="text-sm text-muted-foreground">Verificando sesión...</p>
         </div>
       </div>
@@ -941,112 +677,94 @@ export default function DashboardPage() {
 
   const now = new Date()
   const dateStr = now.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const pageTitle =
-    activeView === 'devs-request'
-      ? 'Devs Request'
-      : activeView === 'license-setup'
-        ? 'Alta de Licencias'
-        : activeView === 'anuncios'
-          ? 'Anuncios'
-          : 'Dashboard'
+
+  const viewMeta: Record<DashboardView, { title: string; description: string }> = {
+    dashboard: { title: 'Dashboard', description: dateStr },
+    'devs-request': { title: 'Devs Request', description: 'Solicitudes pendientes de activación' },
+    'dev-mode': { title: 'Dev Mode', description: 'Control de modo desarrollador por empresa' },
+    'license-setup': { title: 'Alta de Licencia', description: 'Registra una nueva empresa y licencia' },
+    anuncios: { title: 'Anuncios', description: 'Gestiona los anuncios del sistema' },
+    empresas: { title: 'Empresas', description: 'Directorio de empresas registradas' },
+    licenses: { title: 'Licencias', description: 'Capacidad y uso de licencias' },
+  }
+
+  const { title: pageTitle, description: pageDesc } = viewMeta[activeView]
 
   return (
     <div className="flex min-h-screen bg-background">
-      <DashboardSidebar
-        session={session}
-        onLogout={handleLogout}
-        activeView={activeView}
-        onSelectView={handleSelectView}
-      />
+      <DashboardSidebar session={session} onLogout={handleLogout} activeView={activeView} onSelectView={handleSelectView} />
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-background/80 backdrop-blur-md border-b border-border">
-          <div>
-            <h1
-              className="text-xl font-bold text-foreground"
-              style={{ fontFamily: 'var(--font-space-grotesk)' }}
-            >
+        <header className="sticky top-0 z-20 flex items-center justify-between px-6 h-16 bg-background/90 backdrop-blur-md border-b border-border flex-shrink-0">
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold text-foreground truncate" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
               {pageTitle}
             </h1>
-            <p className="text-xs text-muted-foreground capitalize">{dateStr}</p>
+            <p className="text-xs text-muted-foreground capitalize truncate">{pageDesc}</p>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Notification bell */}
-            <button className="relative w-9 h-9 rounded-xl bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-accent/30 transition-all">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+            {/* Notification */}
+            <button className="relative w-8 h-8 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-accent/40 transition-all" aria-label="Notificaciones">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
             </button>
-            {/* Avatar */}
-            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-secondary border border-border hover:border-accent/30 transition-all cursor-pointer">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-primary flex items-center justify-center text-white text-xs font-bold">
-                {session.usuario.nombre?.charAt(0).toUpperCase() || 'A'}
+            {/* User */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-card hover:border-accent/40 transition-all cursor-pointer">
+              <div className="w-6 h-6 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent text-xs font-bold flex-shrink-0">
+                {(session.usuario.nombre || session.usuario.email || 'A').charAt(0).toUpperCase()}
               </div>
-              <div className="hidden sm:block">
-                <p className="text-xs font-semibold text-foreground leading-tight">{session.usuario.empresa_nombre}</p>
-                <p className="text-[10px] text-muted-foreground leading-tight">{session.usuario.email}</p>
+              <div className="hidden sm:block min-w-0">
+                <p className="text-xs font-semibold text-foreground leading-tight truncate max-w-[120px]">{session.usuario.empresa_nombre}</p>
+                <p className="text-[10px] text-muted-foreground leading-tight truncate max-w-[120px]">{session.usuario.email}</p>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Content */}
-        <div className="flex-1 p-6 space-y-6">
-          {activeView === 'dashboard' ? (
-            <>
-              {/* Welcome banner */}
-              <div className="relative rounded-2xl overflow-hidden border border-accent/20 bg-gradient-to-br from-accent/8 via-card to-primary/5 p-6">
-                <div className="absolute inset-0 bg-gradient-to-tr from-accent/5 via-transparent to-primary/10 pointer-events-none" />
-                {/* Decorative dots */}
+        {/* Content area */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* ── DASHBOARD ─────────────────────────────── */}
+          {activeView === 'dashboard' && (
+            <div className="space-y-6 max-w-7xl">
+              {/* Welcome */}
+              <div className="rounded-xl border border-accent/20 bg-card p-6 relative overflow-hidden">
+                <div className="absolute inset-0 bg-accent/3 pointer-events-none" />
                 <div
-                  className="absolute right-0 top-0 bottom-0 w-48 opacity-5"
-                  style={{
-                    backgroundImage: 'radial-gradient(circle, #0DA2E7 1px, transparent 1px)',
-                    backgroundSize: '20px 20px',
-                  }}
+                  className="absolute right-0 top-0 bottom-0 w-40 opacity-[0.035] pointer-events-none"
+                  style={{ backgroundImage: 'radial-gradient(circle, oklch(0.6 0.18 212) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
                 />
                 <div className="relative z-10">
-                  <p className="text-sm font-medium text-accent mb-1" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                    {greeting},
-                  </p>
-                  <h2
-                    className="text-3xl font-bold text-foreground leading-tight text-balance"
-                    style={{ fontFamily: 'var(--font-space-grotesk)' }}
-                  >
-                    Bienvenido al panel
-                    <span className="ml-2 bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent">
-                      Nexus
-                    </span>
+                  <p className="text-xs font-semibold text-accent uppercase tracking-wider mb-1">{greeting}</p>
+                  <h2 className="text-2xl font-bold text-foreground leading-tight text-balance" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                    Bienvenido al panel{' '}
+                    <span className="text-accent">Nexus</span>
                   </h2>
-                  <p className="text-muted-foreground text-sm mt-2 max-w-lg leading-relaxed">
-                    Tienes acceso como <strong className="text-foreground">{session.usuario.email}</strong> en{' '}
-                    <strong className="text-foreground">{session.usuario.empresa_nombre}</strong>.
-                    {' '}Tu sesión es válida por{' '}
-                    <strong className="text-accent">{Math.round(session.expires_in / 60)} minutos</strong>.
+                  <p className="text-sm text-muted-foreground mt-1.5 max-w-lg leading-relaxed">
+                    Accediste como <strong className="text-foreground font-semibold">{session.usuario.email}</strong> en{' '}
+                    <strong className="text-foreground font-semibold">{session.usuario.empresa_nombre}</strong>. Sesión válida por{' '}
+                    <strong className="text-accent">{Math.round(session.expires_in / 60)} min</strong>.
                   </p>
                   <div className="flex items-center gap-2 mt-4">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-accent/12 text-accent border border-accent/20">
-                      <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md bg-accent/10 text-accent border border-accent/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                       Sesión activa
                     </span>
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-secondary border border-border text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md bg-secondary border border-border text-muted-foreground">
                       ID: {session.session_id.slice(0, 8)}…
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Stats grid */}
+              {/* Stats */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {stats.map((s) => (
-                  <StatCard key={s.label} {...s} />
-                ))}
+                {stats.map((s) => <StatCard key={s.label} {...s} />)}
               </div>
 
-              {/* Middle row */}
+              {/* Middle */}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div className="xl:col-span-2">
                   <ActivityFeed />
@@ -1054,326 +772,276 @@ export default function DashboardPage() {
                 <WeeklyChart />
               </div>
 
-              {/* Bottom row */}
+              {/* Bottom */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <PermissionsWidget />
                 <SystemStatus />
               </div>
-            </>
-          ) : activeView === 'devs-request' ? (
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                  Requests pendientes
-                </h2>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    Total: {devRequestsMeta.total} · Página: {devRequestsMeta.page}
-                  </span>
+            </div>
+          )}
+
+          {/* ── DEVS REQUEST ──────────────────────────── */}
+          {activeView === 'devs-request' && (
+            <div className="max-w-7xl">
+              <div className="bg-card rounded-xl border border-border p-6">
+                <SectionHeader
+                  title="Requests pendientes"
+                  description={`${devRequestsMeta.total} solicitudes · Página ${devRequestsMeta.page}`}
+                  action={<ReloadButton onClick={() => void loadDevRequests()} loading={devRequestsLoading} />}
+                />
+
+                {actionMessage && <SuccessBanner message={actionMessage} />}
+                {devRequestsError && <ErrorBanner message={devRequestsError} />}
+
+                {devRequestsLoading ? (
+                  <LoadingState text="Cargando requests..." />
+                ) : devRequests.length === 0 && !devRequestsError ? (
+                  <EmptyState text="No hay requests pendientes." />
+                ) : !devRequestsError ? (
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-secondary/60">
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Empresa</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Solicitante</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Estado</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Nota</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">Fecha</th>
+                          <th className="text-right text-xs font-semibold text-muted-foreground px-4 py-3">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {devRequests.map((request) => (
+                          <tr key={request.id} className="hover:bg-accent/4 transition-colors">
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-foreground">{request.empresaNombre || `Request #${request.id}`}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5 font-mono">{request.empresaId}</p>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground text-sm">{request.requestedByEmail}</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                                {request.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground max-w-[240px] truncate text-sm" title={request.requestNote || 'Sin nota'}>
+                              {request.requestNote || <span className="text-muted-foreground/50 italic">Sin nota</span>}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
+                              {new Date(request.requestedAt).toLocaleString('es-MX')}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAuthorizeRequest(request)}
+                                  disabled={actionLoadingId === request.id}
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                                >
+                                  {actionLoadingId === request.id ? (
+                                    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>
+                                  ) : (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                  )}
+                                  Autorizar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeactivateRequest(request)}
+                                  disabled={actionLoadingId === request.id}
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                  Rechazar
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* ── ALTA LICENCIA ─────────────────────────── */}
+          {activeView === 'license-setup' && (
+            <div className="max-w-2xl">
+              <div className="bg-card rounded-xl border border-border p-6">
+                <SectionHeader title="Crear nueva licencia" description="Registra una empresa y genera sus credenciales de acceso." />
+
+                {licenseMessage && <SuccessBanner message={licenseMessage} />}
+                {licenseError && <ErrorBanner message={licenseError} />}
+
+                <div className="space-y-5">
+                  {/* Empresa section */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Datos de la empresa</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="md:col-span-2">
+                        <InputField
+                          label="Nombre de la empresa"
+                          value={licenseForm.empresa_nombre}
+                          onChange={(e) => setLicenseForm((prev) => ({ ...prev, empresa_nombre: e.target.value }))}
+                          placeholder="Mi Empresa SA de CV"
+                        />
+                      </div>
+                      <InputField
+                        label="RFC"
+                        value={licenseForm.empresa_rfc}
+                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, empresa_rfc: e.target.value }))}
+                        placeholder="ABC123456789"
+                      />
+                      <InputField
+                        label="Correo del usuario"
+                        type="email"
+                        value={licenseForm.usuario_email}
+                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, usuario_email: e.target.value }))}
+                        placeholder="admin@empresa.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-border" />
+
+                  {/* Capacity section */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Capacidad de licencia</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <InputField
+                        label="Máx. usuarios"
+                        type="number"
+                        min={1}
+                        value={licenseForm.max_usuarios}
+                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, max_usuarios: Number(e.target.value) || 0 }))}
+                        hint="Total de usuarios que pueden registrarse"
+                      />
+                      <InputField
+                        label="Máx. conectados"
+                        type="number"
+                        min={1}
+                        value={licenseForm.max_usuarios_conectados}
+                        onChange={(e) => setLicenseForm((prev) => ({ ...prev, max_usuarios_conectados: Number(e.target.value) || 0 }))}
+                        hint="Sesiones simultáneas permitidas"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end">
                   <button
-                    onClick={() => void loadDevRequests()}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/30 transition-colors"
+                    type="button"
+                    onClick={() => void handleCreateLicense()}
+                    disabled={licenseLoading}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    style={{ fontFamily: 'var(--font-space-grotesk)' }}
                   >
-                    Recargar
+                    {licenseLoading ? (
+                      <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>Creando...</>
+                    ) : (
+                      <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.86L12 18.56l-6.18 3.44L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>Dar de alta licencia</>
+                    )}
                   </button>
                 </div>
               </div>
-
-              {actionMessage && (
-                <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                  {actionMessage}
-                </div>
-              )}
-
-              {devRequestsLoading ? (
-                <p className="text-sm text-muted-foreground">Cargando requests...</p>
-              ) : devRequestsError ? (
-                <p className="text-sm text-red-600">{devRequestsError}</p>
-              ) : devRequests.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay requests pendientes.</p>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border border-border">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-secondary/70">
-                      <tr className="border-b border-border">
-                        <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Empresa</th>
-                        <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Solicitante</th>
-                        <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Estado</th>
-                        <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Nota</th>
-                        <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Fecha</th>
-                        <th className="text-right text-xs font-semibold text-muted-foreground px-4 py-3">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {devRequests.map((request) => (
-                        <tr key={request.id} className="border-b border-border/70 last:border-0 hover:bg-accent/5 transition-colors">
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-foreground">{request.empresaNombre || `Request #${request.id}`}</p>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{request.requestedByEmail}</td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                              {request.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground max-w-[320px] truncate" title={request.requestNote || 'Sin nota'}>
-                            {request.requestNote || 'Sin nota'}
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                            {new Date(request.requestedAt).toLocaleString('es-MX')}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => void handleAuthorizeRequest(request)}
-                                disabled={actionLoadingId === request.id}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-                              >
-                                {actionLoadingId === request.id ? 'Procesando...' : 'Autorizar'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleDeactivateRequest(request)}
-                                disabled={actionLoadingId === request.id}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
-                              >
-                                {actionLoadingId === request.id ? 'Procesando...' : 'Rechazar'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </div>
-          ) : activeView === 'license-setup' ? (
-            <div className="rounded-2xl border border-border bg-card p-5 max-w-3xl">
-              <div className="mb-5">
-                <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                  Crear nueva licencia
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Completa los datos para dar de alta una licencia.
-                </p>
-              </div>
+          )}
 
-              {licenseMessage && (
-                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                  {licenseMessage}
-                </div>
-              )}
-
-              {licenseError && (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {licenseError}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground">Empresa</label>
-                  <input
-                    type="text"
-                    value={licenseForm.empresa_nombre}
-                    onChange={(event) => setLicenseForm((prev) => ({ ...prev, empresa_nombre: event.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Mi Empresa SA de CV"
+          {/* ── ANUNCIOS ──────────────────────────────── */}
+          {activeView === 'anuncios' && (
+            <div className="max-w-4xl space-y-6">
+              {/* Create form */}
+              <div className="bg-card rounded-xl border border-border p-6">
+                <SectionHeader title="Crear anuncio" description="Publica un nuevo aviso para los usuarios del sistema." />
+                {anuncioFormMessage && <SuccessBanner message={anuncioFormMessage} />}
+                {anunciosError && !anuncioFormMessage && <ErrorBanner message={anunciosError} />}
+                <div className="space-y-4">
+                  <InputField
+                    label="Título"
+                    value={anuncioForm.titulo}
+                    onChange={(e) => setAnuncioForm((prev) => ({ ...prev, titulo: e.target.value }))}
+                    placeholder="Ej: Aviso de mantenimiento"
                   />
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">RFC</label>
-                  <input
-                    type="text"
-                    value={licenseForm.empresa_rfc}
-                    onChange={(event) => setLicenseForm((prev) => ({ ...prev, empresa_rfc: event.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="ABC123456789"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Correo usuario</label>
-                  <input
-                    type="email"
-                    value={licenseForm.usuario_email}
-                    onChange={(event) => setLicenseForm((prev) => ({ ...prev, usuario_email: event.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="admin@miempresa.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Máx. usuarios</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={licenseForm.max_usuarios}
-                    onChange={(event) =>
-                      setLicenseForm((prev) => ({ ...prev, max_usuarios: Number(event.target.value) || 0 }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Máx. usuarios conectados</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={licenseForm.max_usuarios_conectados}
-                    onChange={(event) =>
-                      setLicenseForm((prev) => ({ ...prev, max_usuarios_conectados: Number(event.target.value) || 0 }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-5 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => void handleCreateLicense()}
-                  disabled={licenseLoading}
-                  className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
-                >
-                  {licenseLoading ? 'Creando...' : 'Dar de alta licencia'}
-                </button>
-              </div>
-            </div>
-          ) : activeView === 'anuncios' ? (
-            <div className="space-y-5">
-              {/* Form para crear anuncio */}
-              <div className="rounded-2xl border border-border bg-card p-5">
-                <h3 className="text-lg font-semibold text-foreground mb-3" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                  Crear nuevo anuncio
-                </h3>
-
-                {anuncioFormMessage && (
-                  <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                    {anuncioFormMessage}
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Título</label>
-                    <input
-                      type="text"
-                      value={anuncioForm.titulo}
-                      onChange={(event) => setAnuncioForm((prev) => ({ ...prev, titulo: event.target.value }))}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                      placeholder="Ej: Aviso interno"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Descripción</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-medium text-foreground">Descripción</label>
                     <textarea
                       value={anuncioForm.descripcion}
-                      onChange={(event) => setAnuncioForm((prev) => ({ ...prev, descripcion: event.target.value }))}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                      placeholder="Ej: Mensaje operativo"
+                      onChange={(e) => setAnuncioForm((prev) => ({ ...prev, descripcion: e.target.value }))}
+                      className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-all duration-150 resize-none"
+                      placeholder="Describe el aviso para los usuarios..."
                       rows={3}
                     />
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="anuncio-activo"
-                      checked={anuncioForm.activo}
-                      onChange={(event) => setAnuncioForm((prev) => ({ ...prev, activo: event.target.checked }))}
-                      className="rounded border-border"
-                    />
-                    <label htmlFor="anuncio-activo" className="text-sm text-foreground">
-                      Activo
-                    </label>
-                  </div>
+                  <label className="flex items-center gap-2.5 cursor-pointer group">
+                    <div
+                      className={cn(
+                        'relative w-9 h-5 rounded-full border-2 transition-all duration-200',
+                        anuncioForm.activo
+                          ? 'bg-accent border-accent'
+                          : 'bg-secondary border-border'
+                      )}
+                      onClick={() => setAnuncioForm((prev) => ({ ...prev, activo: !prev.activo }))}
+                      role="checkbox"
+                      aria-checked={anuncioForm.activo}
+                    >
+                      <div className={cn('absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform duration-200', anuncioForm.activo && 'translate-x-4')} />
+                    </div>
+                    <span className="text-sm text-foreground font-medium">Publicar inmediatamente</span>
+                  </label>
                 </div>
-
-                <div className="mt-4 flex justify-end">
+                <div className="mt-5 flex justify-end">
                   <button
                     type="button"
                     onClick={() => void handleCreateAnuncio()}
                     disabled={anuncioFormLoading}
-                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-sm"
+                    style={{ fontFamily: 'var(--font-space-grotesk)' }}
                   >
-                    {anuncioFormLoading ? 'Creando...' : 'Crear anuncio'}
+                    {anuncioFormLoading ? 'Creando...' : 'Publicar anuncio'}
                   </button>
                 </div>
               </div>
 
-              {/* Lista de anuncios */}
-              <div className="rounded-2xl border border-border bg-card p-5">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                    Anuncios
-                  </h2>
-                  <button
-                    onClick={() => void loadAnuncios()}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/30 transition-colors"
-                  >
-                    Recargar
-                  </button>
-                </div>
-
+              {/* List */}
+              <div className="bg-card rounded-xl border border-border p-6">
+                <SectionHeader
+                  title="Anuncios publicados"
+                  description={`${anuncios.length} anuncio${anuncios.length !== 1 ? 's' : ''} en el sistema`}
+                  action={<ReloadButton onClick={() => void loadAnuncios()} loading={anunciosLoading} />}
+                />
                 {anunciosLoading ? (
-                  <p className="text-sm text-muted-foreground">Cargando anuncios...</p>
-                ) : anunciosError && !anuncioFormMessage ? (
-                  <p className="text-sm text-red-600">{anunciosError}</p>
+                  <LoadingState text="Cargando anuncios..." />
                 ) : anuncios.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No hay anuncios.</p>
+                  <EmptyState text="No hay anuncios publicados." />
                 ) : (
                   <div className="space-y-3">
                     {anuncios.map((anuncio) => (
-                      <div
-                        key={anuncio.id}
-                        className="rounded-xl border border-border/80 bg-gradient-to-br from-card via-card to-accent/5 p-4"
-                      >
+                      <div key={anuncio.id} className="rounded-lg border border-border bg-secondary/30 p-4 hover:border-accent/30 transition-colors">
                         {editingAnuncioId === anuncio.id ? (
-                          // Edit form
-                          <div className="space-y-3 mb-4">
-                            <div>
-                              <label className="text-xs font-medium text-muted-foreground">Título</label>
-                              <input
-                                type="text"
-                                value={editingAnuncioForm.titulo}
-                                onChange={(e) => setEditingAnuncioForm((prev) => ({ ...prev, titulo: e.target.value }))}
-                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                              />
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                id={`anuncio-activo-${anuncio.id}`}
-                                checked={editingAnuncioForm.activo}
-                                onChange={(e) => setEditingAnuncioForm((prev) => ({ ...prev, activo: e.target.checked }))}
-                                className="rounded border-border"
-                              />
-                              <label htmlFor={`anuncio-activo-${anuncio.id}`} className="text-sm text-foreground">
-                                Activo
-                              </label>
-                            </div>
-                            <div className="flex gap-2 justify-end">
-                              <button
-                                type="button"
-                                onClick={() => setEditingAnuncioId(null)}
-                                disabled={editingAnuncioLoading}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:bg-secondary/80 transition-colors"
+                          <div className="space-y-3">
+                            <InputField
+                              label="Título"
+                              value={editingAnuncioForm.titulo}
+                              onChange={(e) => setEditingAnuncioForm((prev) => ({ ...prev, titulo: e.target.value }))}
+                            />
+                            <label className="flex items-center gap-2.5 cursor-pointer">
+                              <div
+                                className={cn('relative w-9 h-5 rounded-full border-2 transition-all duration-200', editingAnuncioForm.activo ? 'bg-accent border-accent' : 'bg-secondary border-border')}
+                                onClick={() => setEditingAnuncioForm((prev) => ({ ...prev, activo: !prev.activo }))}
+                                role="checkbox"
+                                aria-checked={editingAnuncioForm.activo}
                               >
+                                <div className={cn('absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform duration-200', editingAnuncioForm.activo && 'translate-x-4')} />
+                              </div>
+                              <span className="text-sm text-foreground">Activo</span>
+                            </label>
+                            <div className="flex gap-2 justify-end">
+                              <button type="button" onClick={() => setEditingAnuncioId(null)} disabled={editingAnuncioLoading} className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:bg-secondary/80 transition-colors">
                                 Cancelar
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleUpdateAnuncio(anuncio.id)}
-                                disabled={editingAnuncioLoading}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
-                              >
-                                {editingAnuncioLoading ? 'Guardando...' : 'Guardar'}
+                              <button type="button" onClick={() => void handleUpdateAnuncio(anuncio.id)} disabled={editingAnuncioLoading} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50">
+                                {editingAnuncioLoading ? 'Guardando...' : 'Guardar cambios'}
                               </button>
                             </div>
                           </div>
@@ -1381,92 +1049,70 @@ export default function DashboardPage() {
                           <>
                             {anuncio.imagen_url && (
                               <div className="relative mb-3">
-                                <img
-                                  src={`https://montekvps.cloud${anuncio.imagen_url}`}
-                                  alt={anuncio.titulo}
-                                  className="w-full h-40 object-cover rounded-lg"
-                                />
+                                <img src={`https://montekvps.cloud${anuncio.imagen_url}`} alt={anuncio.titulo} className="w-full h-36 object-cover rounded-lg" />
                                 <button
                                   type="button"
                                   onClick={() => void handleDeleteAnuncioImage(anuncio.id)}
                                   disabled={deletingImageId === anuncio.id}
-                                  className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+                                  className="absolute top-2 right-2 w-7 h-7 rounded-md bg-foreground/80 text-background flex items-center justify-center hover:bg-foreground transition-colors disabled:opacity-50"
+                                  aria-label="Eliminar imagen"
                                 >
-                                  {deletingImageId === anuncio.id ? '...' : '✕'}
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                                 </button>
                               </div>
                             )}
                             <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1">
-                                <p className="font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                                  {anuncio.titulo}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Vigente: {new Date(anuncio.fecha_inicio).toLocaleDateString('es-MX')} a {new Date(anuncio.fecha_fin).toLocaleDateString('es-MX')}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-semibold text-foreground text-sm" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{anuncio.titulo}</p>
+                                  <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded border', anuncio.activo ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-secondary text-muted-foreground border-border')}>
+                                    {anuncio.activo ? 'ACTIVO' : 'INACTIVO'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {new Date(anuncio.fecha_inicio).toLocaleDateString('es-MX')} — {new Date(anuncio.fecha_fin).toLocaleDateString('es-MX')}
                                 </p>
                               </div>
-                              <span
-                                className={`text-[10px] font-semibold px-2 py-1 rounded-md ${
-                                  anuncio.activo
-                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                    : 'bg-gray-100 text-gray-600 border border-gray-200'
-                                }`}
-                              >
-                                {anuncio.activo ? 'ACTIVO' : 'INACTIVO'}
-                              </span>
                             </div>
-                            <p className="mt-2 text-sm text-muted-foreground">{anuncio.descripcion}</p>
+                            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{anuncio.descripcion}</p>
                             {anuncio.enlace_url && (
-                              <a
-                                href={anuncio.enlace_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-block mt-2 text-xs text-accent hover:underline"
-                              >
-                                Ver más →
+                              <a href={anuncio.enlace_url} target="_blank" rel="noopener noreferrer" className="inline-block mt-1.5 text-xs text-accent hover:underline">
+                                Ver enlace →
                               </a>
                             )}
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Publicado: {new Date(anuncio.created_at).toLocaleString('es-MX')}
-                            </p>
 
                             {/* Image upload */}
-                            <div className="mt-3 mb-3">
-                              <label className="text-xs font-medium text-muted-foreground block mb-2">
-                                {anuncio.imagen_url ? 'Cambiar imagen' : 'Subir imagen'}
+                            <div className="mt-3 pt-3 border-t border-border/60">
+                              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                                {anuncio.imagen_url ? 'Reemplazar imagen' : 'Subir imagen'}
                               </label>
                               <input
                                 type="file"
                                 accept="image/*"
-                                onChange={(e) => {
-                                  const file = e.currentTarget.files?.[0]
-                                  if (file) {
-                                    void handleUploadAnuncioImage(anuncio.id, file)
-                                  }
-                                }}
+                                onChange={(e) => { const f = e.currentTarget.files?.[0]; if (f) void handleUploadAnuncioImage(anuncio.id, f) }}
                                 disabled={uploadingImageId === anuncio.id}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-border bg-background text-foreground cursor-pointer hover:border-accent/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                className="text-xs text-muted-foreground file:mr-2 file:text-xs file:font-medium file:py-1 file:px-2.5 file:rounded-md file:border file:border-border file:bg-secondary file:text-foreground hover:file:border-accent/40 cursor-pointer disabled:opacity-50"
                               />
+                              {uploadingImageId === anuncio.id && <span className="text-xs text-accent ml-2">Subiendo...</span>}
                             </div>
 
-                            {/* Action buttons */}
+                            {/* Actions */}
                             <div className="mt-3 flex gap-2 justify-end">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setEditingAnuncioId(anuncio.id)
-                                  setEditingAnuncioForm({ titulo: anuncio.titulo, activo: Boolean(anuncio.activo) })
-                                }}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                                onClick={() => { setEditingAnuncioId(anuncio.id); setEditingAnuncioForm({ titulo: anuncio.titulo, activo: Boolean(anuncio.activo) }) }}
+                                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/40 hover:text-foreground transition-colors"
                               >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                 Editar
                               </button>
                               <button
                                 type="button"
                                 onClick={() => void handleDeleteAnuncio(anuncio.id)}
                                 disabled={anuncioDeleteLoading === anuncio.id}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-60"
+                                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
                               >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                                 {anuncioDeleteLoading === anuncio.id ? 'Eliminando...' : 'Eliminar'}
                               </button>
                             </div>
@@ -1478,193 +1124,217 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-          ) : activeView === 'empresas' ? (
-            // Empresas view
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                  Empresas
-                </h2>
-                <button
-                  onClick={() => void loadEmpresas()}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/30 transition-colors"
-                >
-                  Recargar
-                </button>
-              </div>
+          )}
 
-              {empresasLoading ? (
-                <p className="text-sm text-muted-foreground">Cargando empresas...</p>
-              ) : empresasError ? (
-                <p className="text-sm text-red-600">{empresasError}</p>
-              ) : empresas.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay empresas disponibles.</p>
-              ) : (
-                <div className="space-y-2">
-                  {empresas.map((empresa) => (
-                    <div
-                      key={empresa.id}
-                      className="rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-accent/5 p-4 hover:border-accent/40 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                            {empresa.nombre}
-                          </p>
-                          <div className="mt-2 space-y-1">
-                            <p className="text-xs text-muted-foreground">
-                              RFC: <span className="text-foreground font-medium">{empresa.rfc}</span>
-                            </p>
-                            {empresa.db_nombre_contpaqi && (
-                              <p className="text-xs text-muted-foreground">
-                                DB: <span className="text-foreground font-medium">{empresa.db_nombre_contpaqi}</span>
-                              </p>
-                            )}
-                          </div>
-                          {empresa.children && empresa.children.length > 0 && (
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Sucursales: <span className="text-primary font-semibold">{empresa.children.length}</span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {/* ── EMPRESAS ──────────────────────────────── */}
+          {activeView === 'empresas' && (
+            <div className="max-w-5xl">
+              <div className="bg-card rounded-xl border border-border p-6">
+                <SectionHeader
+                  title="Empresas"
+                  description={`${empresas.length} empresa${empresas.length !== 1 ? 's' : ''} registrada${empresas.length !== 1 ? 's' : ''}`}
+                  action={<ReloadButton onClick={() => void loadEmpresas()} loading={empresasLoading} />}
+                />
+                {empresasError && <ErrorBanner message={empresasError} />}
+                {empresasLoading ? (
+                  <LoadingState text="Cargando empresas..." />
+                ) : empresas.length === 0 && !empresasError ? (
+                  <EmptyState text="No hay empresas registradas." />
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-secondary/60">
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Empresa</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">RFC</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">DB ContPAQi</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Sucursales</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {empresas.map((empresa) => (
+                          <tr key={empresa.id} className="hover:bg-accent/4 transition-colors">
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-foreground">{empresa.nombre}</p>
+                              <p className="text-xs text-muted-foreground font-mono mt-0.5">{empresa.id}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="font-mono text-xs bg-secondary border border-border px-2 py-0.5 rounded text-foreground">{empresa.rfc}</span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
+                              {empresa.db_nombre_contpaqi || <span className="italic text-muted-foreground/50">—</span>}
+                            </td>
+                            <td className="px-4 py-3">
+                              {empresa.children && empresa.children.length > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-md">
+                                  {empresa.children.length} sucursal{empresa.children.length !== 1 ? 'es' : ''}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground/50">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
-          ) : activeView === 'dev-mode' ? (
-            // Dev Mode view
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                  Dev Mode
-                </h2>
-                <button
-                  onClick={() => void loadDevModeEmpresas()}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/30 transition-colors"
-                >
-                  Recargar
-                </button>
-              </div>
+          )}
 
-              {devModeLoading ? (
-                <p className="text-sm text-muted-foreground">Cargando empresas...</p>
-              ) : devModeError ? (
-                <p className="text-sm text-red-600">{devModeError}</p>
-              ) : empresasDevMode.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay empresas disponibles.</p>
-              ) : (
-                <div className="space-y-2">
-                  {empresasDevMode.map((empresa) => (
-                    <div
-                      key={empresa.id}
-                      className="rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-accent/5 p-4 hover:border-accent/40 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                            {empresa.nombre}
-                          </p>
-                          <div className="mt-2 space-y-1">
-                            <p className="text-xs text-muted-foreground">
-                              ID: <span className="text-foreground font-medium">{empresa.id}</span>
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              RFC: <span className="text-foreground font-medium">{empresa.rfc}</span>
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Estado: 
-                              <span className={`ml-1 font-semibold ${empresa.dev_mode_enabled ? 'text-green-600' : 'text-gray-400'}`}>
-                                {empresa.dev_mode_enabled ? 'ACTIVO' : 'INACTIVO'}
+          {/* ── DEV MODE ──────────────────────────────── */}
+          {activeView === 'dev-mode' && (
+            <div className="max-w-3xl">
+              <div className="bg-card rounded-xl border border-border p-6">
+                <SectionHeader
+                  title="Dev Mode"
+                  description="Activa o desactiva el modo desarrollador por empresa"
+                  action={<ReloadButton onClick={() => void loadDevModeEmpresas()} loading={devModeLoading} />}
+                />
+                {devModeError && <ErrorBanner message={devModeError} />}
+                {devModeLoading ? (
+                  <LoadingState text="Cargando empresas..." />
+                ) : empresasDevMode.length === 0 && !devModeError ? (
+                  <EmptyState text="No hay empresas disponibles." />
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-secondary/60">
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Empresa</th>
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">RFC</th>
+                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Estado</th>
+                          <th className="text-right text-xs font-semibold text-muted-foreground px-4 py-3">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {empresasDevMode.map((empresa) => (
+                          <tr key={empresa.id} className="hover:bg-accent/4 transition-colors">
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-foreground">{empresa.nombre}</p>
+                              <p className="text-xs text-muted-foreground font-mono mt-0.5">{empresa.id}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="font-mono text-xs bg-secondary border border-border px-2 py-0.5 rounded text-foreground">{empresa.rfc}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={cn(
+                                'inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border',
+                                empresa.dev_mode_enabled
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-secondary text-muted-foreground border-border'
+                              )}>
+                                <span className={cn('w-1.5 h-1.5 rounded-full', empresa.dev_mode_enabled ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40')} />
+                                {empresa.dev_mode_enabled ? 'Activo' : 'Inactivo'}
                               </span>
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => void handleToggleDevMode(empresa.id, empresa.dev_mode_enabled)}
-                          disabled={togglingDevModeId === empresa.id}
-                          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                            togglingDevModeId === empresa.id
-                              ? 'opacity-50 cursor-not-allowed'
-                              : empresa.dev_mode_enabled
-                                ? 'border-red-500 bg-red-500/10 text-red-600 hover:bg-red-500/20'
-                                : 'border-green-500 bg-green-500/10 text-green-600 hover:bg-green-500/20'
-                          }`}
-                        >
-                          {togglingDevModeId === empresa.id ? (
-                            <span className="inline-block animate-spin">⟳</span>
-                          ) : empresa.dev_mode_enabled ? (
-                            'Desactivar'
-                          ) : (
-                            'Activar'
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            // Licenses view
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                  Licencias
-                </h2>
-                <button
-                  onClick={() => void loadLicenses()}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/30 transition-colors"
-                >
-                  Recargar
-                </button>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                onClick={() => void handleToggleDevMode(empresa.id, empresa.dev_mode_enabled)}
+                                disabled={togglingDevModeId === empresa.id}
+                                className={cn(
+                                  'inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50',
+                                  empresa.dev_mode_enabled
+                                    ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                )}
+                              >
+                                {togglingDevModeId === empresa.id ? (
+                                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>
+                                ) : empresa.dev_mode_enabled ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+                                ) : (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                )}
+                                {empresa.dev_mode_enabled ? 'Desactivar' : 'Activar'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
+            </div>
+          )}
 
-              {licensesLoading ? (
-                <p className="text-sm text-muted-foreground">Cargando licencias...</p>
-              ) : licensesError ? (
-                <p className="text-sm text-red-600">{licensesError}</p>
-              ) : licenses.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay licencias disponibles.</p>
-              ) : (
-                <div className="space-y-2">
-                  {licenses.map((license) => (
-                    <div
-                      key={license.id}
-                      className="rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-accent/5 p-4 hover:border-accent/40 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                            {license.empresa_nombre || `Empresa ${license.empresa_id}`}
-                          </p>
-                          <div className="mt-2 space-y-1">
-                            <p className="text-xs text-muted-foreground">
-                              ID: <span className="text-foreground font-medium">{license.empresa_id}</span>
-                            </p>
-                            {license.max_usuarios !== undefined && (
-                              <p className="text-xs text-muted-foreground">
-                                Usuarios: <span className="text-foreground font-medium">{license.usuarios_activos ?? 0} / {license.max_usuarios}</span>
-                              </p>
-                            )}
-                            {license.max_usuarios_conectados !== undefined && (
-                              <p className="text-xs text-muted-foreground">
-                                Conectados: <span className="text-foreground font-medium">{license.sesiones_activas ?? 0} / {license.max_usuarios_conectados}</span>
-                              </p>
-                            )}
-                            {license.usuarios_disponibles !== undefined && (
-                              <p className="text-xs text-muted-foreground">
-                                Disponibles: <span className="text-foreground font-medium">{license.usuarios_disponibles} usuarios, {license.sesiones_disponibles} sesiones</span>
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {/* ── LICENSES ──────────────────────────────── */}
+          {activeView === 'licenses' && (
+            <div className="max-w-5xl">
+              <div className="bg-card rounded-xl border border-border p-6">
+                <SectionHeader
+                  title="Licencias"
+                  description="Capacidad y uso de licencias por empresa"
+                  action={<ReloadButton onClick={() => void loadLicenses()} loading={licensesLoading} />}
+                />
+                {licensesError && <ErrorBanner message={licensesError} />}
+                {licensesLoading ? (
+                  <LoadingState text="Cargando licencias..." />
+                ) : licenses.length === 0 && !licensesError ? (
+                  <EmptyState text="No hay licencias disponibles." />
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-secondary/60">
+                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Empresa</th>
+                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Usuarios</th>
+                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Sesiones</th>
+                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Disponibles</th>
+                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Uso</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {licenses.map((license) => {
+                          const usagePct = license.max_usuarios > 0
+                            ? Math.round(((license.usuarios_activos ?? 0) / license.max_usuarios) * 100)
+                            : 0
+                          return (
+                            <tr key={license.id} className="hover:bg-accent/4 transition-colors">
+                              <td className="px-4 py-3">
+                                <p className="font-medium text-foreground">{license.empresa_nombre || `Empresa ${license.empresa_id}`}</p>
+                                <p className="text-xs text-muted-foreground font-mono mt-0.5">{license.empresa_id}</p>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="font-semibold text-foreground tabular-nums">
+                                  {license.usuarios_activos ?? 0}
+                                </span>
+                                <span className="text-muted-foreground"> / {license.max_usuarios}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="font-semibold text-foreground tabular-nums">
+                                  {license.sesiones_activas ?? 0}
+                                </span>
+                                <span className="text-muted-foreground"> / {license.max_usuarios_conectados}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="text-sm text-foreground tabular-nums">
+                                  {license.usuarios_disponibles ?? 0} <span className="text-muted-foreground text-xs">usr</span>
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2.5 justify-center">
+                                  <div className="w-20 h-1.5 rounded-full bg-secondary border border-border overflow-hidden">
+                                    <div
+                                      className={cn('h-full rounded-full transition-all', usagePct > 80 ? 'bg-amber-500' : 'bg-accent')}
+                                      style={{ width: `${usagePct}%` }}
+                                    />
+                                  </div>
+                                  <span className={cn('text-xs font-semibold tabular-nums w-8 text-right', usagePct > 80 ? 'text-amber-600' : 'text-muted-foreground')}>
+                                    {usagePct}%
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
