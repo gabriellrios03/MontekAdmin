@@ -224,7 +224,7 @@ interface DashboardStats {
   requestsPendientes: number
 }
 
-/* ── Page ────────────────────��──────────────────────────── */
+/* ── Page ────────────────────���──────────────────────────── */
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -301,6 +301,9 @@ export default function DashboardPage() {
   const [devModeLoading, setDevModeLoading] = useState(false)
   const [devModeError, setDevModeError] = useState<string | null>(null)
   const [togglingDevModeId, setTogglingDevModeId] = useState<string | null>(null)
+  const [devModeMessage, setDevModeMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+  const [devModeConfirmId, setDevModeConfirmId] = useState<string | null>(null)
+  const [devModeSearch, setDevModeSearch] = useState('')
 
   useEffect(() => {
     const s = loadSession()
@@ -758,8 +761,10 @@ export default function DashboardPage() {
 
   async function handleToggleDevMode(empresaId: string, currentStatus: boolean) {
     if (!session?.token) return
+    setDevModeConfirmId(null)
     setTogglingDevModeId(empresaId)
-    setDevModeError(null)
+    setDevModeMessage(null)
+    const empresa = empresasDevMode.find(e => e.id === empresaId)
     try {
       const res = await fetch('https://montekvps.cloud/api/dev-mode/toggle', {
         method: 'POST',
@@ -768,9 +773,16 @@ export default function DashboardPage() {
       })
       if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
       if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
-      await loadDevModeEmpresas()
+      // Optimistic update
+      setEmpresasDevMode(prev => prev.map(e => e.id === empresaId ? { ...e, dev_mode_enabled: !currentStatus } : e))
+      setDevModeMessage({
+        text: !currentStatus
+          ? `Dev mode activado para ${empresa?.nombre ?? empresaId}.`
+          : `Dev mode desactivado para ${empresa?.nombre ?? empresaId}.`,
+        type: 'success',
+      })
     } catch (e) {
-      setDevModeError(e instanceof Error ? e.message : 'No se pudo cambiar el estado de dev-mode')
+      setDevModeMessage({ text: e instanceof Error ? e.message : 'No se pudo cambiar el estado de dev-mode', type: 'error' })
     } finally {
       setTogglingDevModeId(null)
     }
@@ -1566,81 +1578,239 @@ export default function DashboardPage() {
           )}
 
           {/* ── DEV MODE ──────────────────────────────── */}
-          {activeView === 'dev-mode' && (
-            <div className="max-w-3xl">
-              <div className="bg-card rounded-xl border border-border p-6">
-                <SectionHeader
-                  title="Dev Mode"
-                  description="Activa o desactiva el modo desarrollador por empresa"
-                  action={<ReloadButton onClick={() => void loadDevModeEmpresas()} loading={devModeLoading} />}
-                />
-                {devModeError && <ErrorBanner message={devModeError} />}
+          {activeView === 'dev-mode' && (() => {
+            const activeCount = empresasDevMode.filter(e => e.dev_mode_enabled).length
+            const filtered = empresasDevMode.filter(e =>
+              !devModeSearch ||
+              e.nombre.toLowerCase().includes(devModeSearch.toLowerCase()) ||
+              e.rfc.toLowerCase().includes(devModeSearch.toLowerCase())
+            )
+
+            return (
+              <div className="max-w-4xl space-y-5">
+
+                {/* Toast */}
+                {devModeMessage && (
+                  <div className={cn(
+                    'flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium shadow-sm',
+                    devModeMessage.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-destructive/8 border-destructive/25 text-destructive'
+                  )}>
+                    {devModeMessage.type === 'success' ? (
+                      <svg width="15" height="15" className="flex-shrink-0 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                    ) : (
+                      <svg width="15" height="15" className="flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    )}
+                    {devModeMessage.text}
+                    <button onClick={() => setDevModeMessage(null)} className="ml-auto flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
+                  </div>
+                )}
+
+                {/* Header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>Dev Mode</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Control de modo desarrollador por empresa</p>
+                  </div>
+                  <ReloadButton onClick={() => void loadDevModeEmpresas()} loading={devModeLoading} />
+                </div>
+
+                {/* Stat pills + search */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className={cn(
+                    'flex items-center gap-2 px-3.5 py-2 rounded-xl border',
+                    activeCount > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-secondary border-border'
+                  )}>
+                    <span className={cn('w-2 h-2 rounded-full', activeCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30')} />
+                    <span className={cn('text-xs font-semibold', activeCount > 0 ? 'text-emerald-700' : 'text-muted-foreground')}>
+                      {activeCount} activo{activeCount !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-secondary border border-border">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>
+                    <span className="text-xs font-semibold text-muted-foreground">{empresasDevMode.length} empresas</span>
+                  </div>
+
+                  {/* Search */}
+                  <div className="relative ml-auto">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+                      <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Buscar empresa..."
+                      value={devModeSearch}
+                      onChange={e => setDevModeSearch(e.target.value)}
+                      className="pl-8 pr-3 py-2 text-xs rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-all w-52"
+                    />
+                    {devModeSearch && (
+                      <button
+                        onClick={() => setDevModeSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Content */}
                 {devModeLoading ? (
                   <LoadingState text="Cargando empresas..." />
-                ) : empresasDevMode.length === 0 && !devModeError ? (
-                  <EmptyState text="No hay empresas disponibles." />
+                ) : devModeError ? (
+                  <ErrorState message={devModeError} onRetry={() => void loadDevModeEmpresas()} />
+                ) : filtered.length === 0 ? (
+                  devModeSearch ? (
+                    <div className="flex flex-col items-center gap-3 py-16 text-center">
+                      <div className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                      </div>
+                      <p className="text-sm text-muted-foreground">Sin resultados para <strong className="text-foreground">&ldquo;{devModeSearch}&rdquo;</strong></p>
+                    </div>
+                  ) : (
+                    <EmptyState text="No hay empresas disponibles." />
+                  )
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border bg-secondary/60">
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Empresa</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">RFC</th>
-                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Estado</th>
-                          <th className="text-right text-xs font-semibold text-muted-foreground px-4 py-3">Acción</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {empresasDevMode.map((empresa) => (
-                          <tr key={empresa.id} className="hover:bg-accent/4 transition-colors">
-                            <td className="px-4 py-3">
-                              <p className="font-medium text-foreground">{empresa.nombre}</p>
-                              <p className="text-xs text-muted-foreground font-mono mt-0.5">{empresa.id}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="font-mono text-xs bg-secondary border border-border px-2 py-0.5 rounded text-foreground">{empresa.rfc}</span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={cn(
-                                'inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border',
-                                empresa.dev_mode_enabled
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-secondary text-muted-foreground border-border'
-                              )}>
-                                <span className={cn('w-1.5 h-1.5 rounded-full', empresa.dev_mode_enabled ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40')} />
-                                {empresa.dev_mode_enabled ? 'Activo' : 'Inactivo'}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
+                  <div className="grid gap-3">
+                    {filtered.map((empresa) => {
+                      const isToggling = togglingDevModeId === empresa.id
+                      const isConfirming = devModeConfirmId === empresa.id
+                      const enabled = empresa.dev_mode_enabled
+
+                      return (
+                        <div
+                          key={empresa.id}
+                          className={cn(
+                            'bg-card rounded-xl border transition-all duration-200',
+                            enabled
+                              ? 'border-emerald-200/60 shadow-sm shadow-emerald-500/5'
+                              : 'border-border'
+                          )}
+                        >
+                          <div className="flex items-center gap-4 px-5 py-4">
+                            {/* Avatar */}
+                            <div className={cn(
+                              'w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 relative',
+                              enabled
+                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                : 'bg-secondary text-muted-foreground border border-border'
+                            )}>
+                              {empresa.nombre.charAt(0).toUpperCase()}
+                              {enabled && (
+                                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-card" />
+                              )}
+                            </div>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-sm text-foreground truncate">{empresa.nombre}</p>
+                                <span className={cn(
+                                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border',
+                                  enabled
+                                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                                    : 'bg-secondary text-muted-foreground border-border'
+                                )}>
+                                  {enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                                  {enabled ? 'Activo' : 'Inactivo'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className="font-mono text-xs text-muted-foreground bg-secondary border border-border px-1.5 py-0.5 rounded">
+                                  {empresa.rfc}
+                                </span>
+                                <span className="text-xs text-muted-foreground font-mono truncate max-w-[180px]" title={empresa.id}>
+                                  ID: {empresa.id.slice(0, 8)}...
+                                </span>
+                                {empresa.children && empresa.children.length > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {empresa.children.length} sub-empresa{empresa.children.length !== 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Toggle switch */}
+                            {!isConfirming && (
                               <button
-                                onClick={() => void handleToggleDevMode(empresa.id, empresa.dev_mode_enabled)}
-                                disabled={togglingDevModeId === empresa.id}
-                                className={cn(
-                                  'inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50',
-                                  empresa.dev_mode_enabled
-                                    ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                )}
+                                type="button"
+                                onClick={() => {
+                                  if (enabled) setDevModeConfirmId(empresa.id)
+                                  else void handleToggleDevMode(empresa.id, false)
+                                }}
+                                disabled={isToggling}
+                                className="flex items-center gap-3 flex-shrink-0 group disabled:opacity-50"
+                                aria-label={enabled ? 'Desactivar dev mode' : 'Activar dev mode'}
                               >
-                                {togglingDevModeId === empresa.id ? (
-                                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>
-                                ) : empresa.dev_mode_enabled ? (
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-                                ) : (
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                )}
-                                {empresa.dev_mode_enabled ? 'Desactivar' : 'Activar'}
+                                <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors hidden sm:block">
+                                  {isToggling ? 'Aplicando...' : enabled ? 'Desactivar' : 'Activar'}
+                                </span>
+                                {/* Visual toggle */}
+                                <span className={cn(
+                                  'relative inline-flex items-center w-11 h-6 rounded-full border transition-all duration-300',
+                                  enabled
+                                    ? 'bg-emerald-500 border-emerald-500'
+                                    : 'bg-secondary border-border',
+                                  isToggling && 'opacity-50'
+                                )}>
+                                  <span className={cn(
+                                    'absolute w-4 h-4 rounded-full bg-card shadow-sm transition-all duration-300',
+                                    enabled ? 'left-6' : 'left-1'
+                                  )}>
+                                    {isToggling && (
+                                      <span className="absolute inset-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                                    )}
+                                  </span>
+                                </span>
                               </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            )}
+                          </div>
+
+                          {/* Confirmation strip for deactivation */}
+                          {isConfirming && (
+                            <div className="mx-5 mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-2.5">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600 flex-shrink-0">
+                                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                                </svg>
+                                <p className="text-xs font-medium text-red-800">
+                                  Desactivar dev mode para <strong>{empresa.nombre}</strong>?
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setDevModeConfirmId(null)}
+                                  className="text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => void handleToggleDevMode(empresa.id, true)}
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                                >
+                                  {isToggling ? (
+                                    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg>
+                                  ) : null}
+                                  Si, desactivar
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* ── LICENSES ──────────────────────────────── */}
           {activeView === 'licenses' && (
