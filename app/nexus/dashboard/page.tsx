@@ -224,7 +224,7 @@ interface DashboardStats {
   requestsPendientes: number
 }
 
-/* ── Page ────────────────────���──────────────────────────── */
+/* ── Page ────────────────────����──────────────────────────── */
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -274,13 +274,17 @@ export default function DashboardPage() {
   const [anuncios, setAnuncios] = useState<Anuncio[]>([])
   const [anunciosLoading, setAnunciosLoading] = useState(false)
   const [anunciosError, setAnunciosError] = useState<string | null>(null)
-  const [anuncioForm, setAnuncioForm] = useState({ titulo: '', descripcion: '', activo: true })
+  const defaultAnuncioForm = { titulo: '', descripcion: '', enlace_url: '', activo: true }
+  const [anuncioForm, setAnuncioForm] = useState(defaultAnuncioForm)
   const [anuncioFormLoading, setAnuncioFormLoading] = useState(false)
-  const [anuncioFormMessage, setAnuncioFormMessage] = useState<string | null>(null)
+  const [anuncioFormErrors, setAnuncioFormErrors] = useState<{ titulo?: string; descripcion?: string }>({})
+  const [anuncioToast, setAnuncioToast] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+  const [anuncioDeleteConfirmId, setAnuncioDeleteConfirmId] = useState<number | null>(null)
   const [anuncioDeleteLoading, setAnuncioDeleteLoading] = useState<number | null>(null)
   const [editingAnuncioId, setEditingAnuncioId] = useState<number | null>(null)
-  const [editingAnuncioForm, setEditingAnuncioForm] = useState({ titulo: '', activo: true })
+  const [editingAnuncioForm, setEditingAnuncioForm] = useState({ titulo: '', descripcion: '', enlace_url: '', activo: true })
   const [editingAnuncioLoading, setEditingAnuncioLoading] = useState(false)
+  const [togglingAnuncioId, setTogglingAnuncioId] = useState<number | null>(null)
   const [uploadingImageId, setUploadingImageId] = useState<number | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<number | null>(null)
 
@@ -499,10 +503,98 @@ export default function DashboardPage() {
   }
 
   async function handleCreateAnuncio() {
-    if (!session?.token || !anuncioForm.titulo || !anuncioForm.descripcion) {
-      setAnunciosError('Completa título y descripción')
-      return
+    if (!session?.token) return
+    const errors: { titulo?: string; descripcion?: string } = {}
+    if (!anuncioForm.titulo.trim()) errors.titulo = 'El título es requerido'
+    if (!anuncioForm.descripcion.trim()) errors.descripcion = 'La descripción es requerida'
+    if (Object.keys(errors).length > 0) { setAnuncioFormErrors(errors); return }
+    setAnuncioFormErrors({})
+    setAnuncioFormLoading(true)
+    try {
+      const body: Record<string, unknown> = { titulo: anuncioForm.titulo, descripcion: anuncioForm.descripcion, activo: anuncioForm.activo }
+      if (anuncioForm.enlace_url.trim()) body.enlace_url = anuncioForm.enlace_url.trim()
+      const res = await fetch('https://montekvps.cloud/api/anuncios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify(body),
+      })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
+      setAnuncioToast({ text: `Anuncio "${anuncioForm.titulo}" publicado correctamente.`, type: 'success' })
+      setAnuncioForm(defaultAnuncioForm)
+      await loadAnuncios()
+    } catch (e) {
+      setAnuncioToast({ text: e instanceof Error ? e.message : 'No se pudo crear el anuncio', type: 'error' })
+    } finally {
+      setAnuncioFormLoading(false)
     }
+  }
+
+  async function handleDeleteAnuncio(id: number) {
+    if (!session?.token) return
+    setAnuncioDeleteLoading(id)
+    setAnuncioDeleteConfirmId(null)
+    try {
+      const res = await fetch(`https://montekvps.cloud/api/anuncios/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) throw new Error(`Error HTTP ${res.status}`)
+      setAnuncioToast({ text: 'Anuncio eliminado.', type: 'success' })
+      setAnuncios(prev => prev.filter(a => a.id !== id))
+    } catch (e) {
+      setAnuncioToast({ text: e instanceof Error ? e.message : 'No se pudo eliminar el anuncio', type: 'error' })
+    } finally {
+      setAnuncioDeleteLoading(null)
+    }
+  }
+
+  async function handleUpdateAnuncio(id: number) {
+    if (!session?.token) return
+    setEditingAnuncioLoading(true)
+    try {
+      const body: Record<string, unknown> = { titulo: editingAnuncioForm.titulo, descripcion: editingAnuncioForm.descripcion, activo: editingAnuncioForm.activo }
+      if (editingAnuncioForm.enlace_url.trim()) body.enlace_url = editingAnuncioForm.enlace_url.trim()
+      const res = await fetch(`https://montekvps.cloud/api/anuncios/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify(body),
+      })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) { const ep = await res.json().catch(() => ({} as { message?: string })); throw new Error(ep?.message || `Error HTTP ${res.status}`) }
+      setEditingAnuncioId(null)
+      setAnuncioToast({ text: 'Cambios guardados.', type: 'success' })
+      await loadAnuncios()
+    } catch (e) {
+      setAnuncioToast({ text: e instanceof Error ? e.message : 'No se pudo actualizar el anuncio', type: 'error' })
+    } finally {
+      setEditingAnuncioLoading(false)
+    }
+  }
+
+  async function handleToggleAnuncioActivo(anuncio: Anuncio) {
+    if (!session?.token) return
+    setTogglingAnuncioId(anuncio.id)
+    const newActivo = !anuncio.activo
+    // Optimistic update
+    setAnuncios(prev => prev.map(a => a.id === anuncio.id ? { ...a, activo: newActivo ? 1 : 0 } : a))
+    try {
+      const res = await fetch(`https://montekvps.cloud/api/anuncios/${anuncio.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ activo: newActivo }),
+      })
+      if (res.status === 401 || res.status === 403) { clearSession(); router.replace('/nexus/login'); return }
+      if (!res.ok) {
+        // Rollback
+        setAnuncios(prev => prev.map(a => a.id === anuncio.id ? { ...a, activo: anuncio.activo } : a))
+        throw new Error(`Error HTTP ${res.status}`)
+      }
+      setAnuncioToast({ text: newActivo ? `"${anuncio.titulo}" activado.` : `"${anuncio.titulo}" desactivado.`, type: 'success' })
+    } catch (e) {
+      setAnuncioToast({ text: e instanceof Error ? e.message : 'No se pudo cambiar el estado', type: 'error' })
+    } finally {
+      setTogglingAnuncioId(null)
+    }
+  }
     setAnuncioFormLoading(true)
     setAnuncioFormMessage(null)
     setAnunciosError(null)
@@ -1634,182 +1726,386 @@ export default function DashboardPage() {
           )}
 
           {/* ── ANUNCIOS ──────────────────────────────── */}
-          {activeView === 'anuncios' && (
-            <div className="max-w-4xl space-y-6">
-              {/* Create form */}
-              <div className="bg-card rounded-xl border border-border p-6">
-                <SectionHeader title="Crear anuncio" description="Publica un nuevo aviso para los usuarios del sistema." />
-                {anuncioFormMessage && <SuccessBanner message={anuncioFormMessage} />}
-                {anunciosError && !anuncioFormMessage && <ErrorBanner message={anunciosError} />}
-                <div className="space-y-4">
-                  <InputField
-                    label="Título"
-                    value={anuncioForm.titulo}
-                    onChange={(e) => setAnuncioForm((prev) => ({ ...prev, titulo: e.target.value }))}
-                    placeholder="Ej: Aviso de mantenimiento"
-                  />
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-foreground">Descripción</label>
-                    <textarea
-                      value={anuncioForm.descripcion}
-                      onChange={(e) => setAnuncioForm((prev) => ({ ...prev, descripcion: e.target.value }))}
-                      className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-all duration-150 resize-none"
-                      placeholder="Describe el aviso para los usuarios..."
-                      rows={3}
-                    />
-                  </div>
-                  <label className="flex items-center gap-2.5 cursor-pointer group">
-                    <div
-                      className={cn(
-                        'relative w-9 h-5 rounded-full border-2 transition-all duration-200',
-                        anuncioForm.activo
-                          ? 'bg-accent border-accent'
-                          : 'bg-secondary border-border'
-                      )}
-                      onClick={() => setAnuncioForm((prev) => ({ ...prev, activo: !prev.activo }))}
-                      role="checkbox"
-                      aria-checked={anuncioForm.activo}
-                    >
-                      <div className={cn('absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform duration-200', anuncioForm.activo && 'translate-x-4')} />
-                    </div>
-                    <span className="text-sm text-foreground font-medium">Publicar inmediatamente</span>
-                  </label>
-                </div>
-                <div className="mt-5 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => void handleCreateAnuncio()}
-                    disabled={anuncioFormLoading}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-sm"
-                    style={{ fontFamily: 'var(--font-space-grotesk)' }}
-                  >
-                    {anuncioFormLoading ? 'Creando...' : 'Publicar anuncio'}
-                  </button>
-                </div>
-              </div>
+          {activeView === 'anuncios' && (() => {
+            const activeCount = anuncios.filter(a => a.activo).length
 
-              {/* List */}
-              <div className="bg-card rounded-xl border border-border p-6">
-                <SectionHeader
-                  title="Anuncios publicados"
-                  description={`${anuncios.length} anuncio${anuncios.length !== 1 ? 's' : ''} en el sistema`}
-                  action={<ReloadButton onClick={() => void loadAnuncios()} loading={anunciosLoading} />}
-                />
-                {anunciosLoading ? (
-                  <LoadingState text="Cargando anuncios..." />
-                ) : anuncios.length === 0 ? (
-                  <EmptyState text="No hay anuncios publicados." />
-                ) : (
+            function AnuncioToggle({ checked, onChange, disabled }: { checked: boolean; onChange: () => void; disabled?: boolean }) {
+              return (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={checked}
+                  onClick={onChange}
+                  disabled={disabled}
+                  className={cn(
+                    'relative inline-flex items-center w-11 h-6 rounded-full border-2 transition-all duration-300 disabled:opacity-50 flex-shrink-0',
+                    checked ? 'bg-emerald-500 border-emerald-500' : 'bg-secondary border-border'
+                  )}
+                >
+                  <span className={cn('absolute w-4 h-4 rounded-full bg-card shadow-sm transition-all duration-300', checked ? 'left-6' : 'left-1')} />
+                </button>
+              )
+            }
+
+            return (
+              <div className="max-w-5xl space-y-5">
+
+                {/* Toast */}
+                {anuncioToast && (
+                  <div className={cn(
+                    'flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium shadow-sm',
+                    anuncioToast.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-destructive/8 border-destructive/25 text-destructive'
+                  )}>
+                    {anuncioToast.type === 'success'
+                      ? <svg width="15" height="15" className="flex-shrink-0 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      : <svg width="15" height="15" className="flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    }
+                    {anuncioToast.text}
+                    <button onClick={() => setAnuncioToast(null)} className="ml-auto flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
+                  </div>
+                )}
+
+                {/* Page header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>Anuncios</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Gestiona los avisos visibles para los usuarios del sistema</p>
+                  </div>
+                  <ReloadButton onClick={() => void loadAnuncios()} loading={anunciosLoading} />
+                </div>
+
+                {/* Stat pills */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className={cn('flex items-center gap-2 px-3.5 py-2 rounded-xl border', activeCount > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-secondary border-border')}>
+                    <span className={cn('w-2 h-2 rounded-full', activeCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30')} />
+                    <span className={cn('text-xs font-semibold', activeCount > 0 ? 'text-emerald-700' : 'text-muted-foreground')}>{activeCount} activo{activeCount !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-secondary border border-border">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    <span className="text-xs font-semibold text-muted-foreground">{anuncios.length} en total</span>
+                  </div>
+                </div>
+
+                {/* Two-column layout on md+ */}
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_1.4fr] gap-5 items-start">
+
+                  {/* ── CREATE FORM ── */}
+                  <div className="bg-card rounded-xl border border-border p-5 space-y-4 sticky top-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      </div>
+                      <p className="text-sm font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>Nuevo anuncio</p>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      {/* Titulo */}
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">Titulo <span className="text-destructive">*</span></label>
+                        <input
+                          type="text"
+                          value={anuncioForm.titulo}
+                          onChange={e => { setAnuncioForm(p => ({ ...p, titulo: e.target.value })); if (anuncioFormErrors.titulo) setAnuncioFormErrors(p => ({ ...p, titulo: '' })) }}
+                          placeholder="Ej: Aviso de mantenimiento"
+                          className={cn(
+                            'w-full rounded-lg border bg-secondary/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:border-accent transition-all duration-150',
+                            anuncioFormErrors.titulo ? 'border-destructive/50 focus:ring-destructive/20' : 'border-border focus:ring-accent/30'
+                          )}
+                        />
+                        {anuncioFormErrors.titulo && <p className="text-xs text-destructive">{anuncioFormErrors.titulo}</p>}
+                      </div>
+
+                      {/* Descripcion */}
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">Descripcion <span className="text-destructive">*</span></label>
+                        <textarea
+                          value={anuncioForm.descripcion}
+                          onChange={e => { setAnuncioForm(p => ({ ...p, descripcion: e.target.value })); if (anuncioFormErrors.descripcion) setAnuncioFormErrors(p => ({ ...p, descripcion: '' })) }}
+                          placeholder="Describe el aviso para los usuarios..."
+                          rows={3}
+                          className={cn(
+                            'w-full rounded-lg border bg-secondary/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:border-accent transition-all duration-150 resize-none',
+                            anuncioFormErrors.descripcion ? 'border-destructive/50 focus:ring-destructive/20' : 'border-border focus:ring-accent/30'
+                          )}
+                        />
+                        {anuncioFormErrors.descripcion && <p className="text-xs text-destructive">{anuncioFormErrors.descripcion}</p>}
+                      </div>
+
+                      {/* Enlace */}
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">Enlace <span className="text-muted-foreground/50 font-normal normal-case">(opcional)</span></label>
+                        <div className="relative">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                          <input
+                            type="url"
+                            value={anuncioForm.enlace_url}
+                            onChange={e => setAnuncioForm(p => ({ ...p, enlace_url: e.target.value }))}
+                            placeholder="https://..."
+                            className="w-full pl-8 pr-3 py-2.5 rounded-lg border border-border bg-secondary/40 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-150"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Activo toggle */}
+                      <div className="flex items-center justify-between py-1">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Publicar inmediatamente</p>
+                          <p className="text-xs text-muted-foreground">Visible para los usuarios al crearse</p>
+                        </div>
+                        <AnuncioToggle
+                          checked={anuncioForm.activo}
+                          onChange={() => setAnuncioForm(p => ({ ...p, activo: !p.activo }))}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleCreateAnuncio()}
+                      disabled={anuncioFormLoading}
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-sm"
+                      style={{ fontFamily: 'var(--font-space-grotesk)' }}
+                    >
+                      {anuncioFormLoading ? (
+                        <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg> Publicando...</>
+                      ) : (
+                        <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Publicar anuncio</>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* ── ANUNCIOS LIST ── */}
                   <div className="space-y-3">
-                    {anuncios.map((anuncio) => (
-                      <div key={anuncio.id} className="rounded-lg border border-border bg-secondary/30 p-4 hover:border-accent/30 transition-colors">
-                        {editingAnuncioId === anuncio.id ? (
-                          <div className="space-y-3">
-                            <InputField
-                              label="Título"
-                              value={editingAnuncioForm.titulo}
-                              onChange={(e) => setEditingAnuncioForm((prev) => ({ ...prev, titulo: e.target.value }))}
-                            />
-                            <label className="flex items-center gap-2.5 cursor-pointer">
-                              <div
-                                className={cn('relative w-9 h-5 rounded-full border-2 transition-all duration-200', editingAnuncioForm.activo ? 'bg-accent border-accent' : 'bg-secondary border-border')}
-                                onClick={() => setEditingAnuncioForm((prev) => ({ ...prev, activo: !prev.activo }))}
-                                role="checkbox"
-                                aria-checked={editingAnuncioForm.activo}
-                              >
-                                <div className={cn('absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform duration-200', editingAnuncioForm.activo && 'translate-x-4')} />
-                              </div>
-                              <span className="text-sm text-foreground">Activo</span>
-                            </label>
-                            <div className="flex gap-2 justify-end">
-                              <button type="button" onClick={() => setEditingAnuncioId(null)} disabled={editingAnuncioLoading} className="text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:bg-secondary/80 transition-colors">
-                                Cancelar
-                              </button>
-                              <button type="button" onClick={() => void handleUpdateAnuncio(anuncio.id)} disabled={editingAnuncioLoading} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50">
-                                {editingAnuncioLoading ? 'Guardando...' : 'Guardar cambios'}
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            {anuncio.imagen_url && (
-                              <div className="relative mb-3">
-                                <img src={`https://montekvps.cloud${anuncio.imagen_url}`} alt={anuncio.titulo} className="w-full h-36 object-cover rounded-lg" />
+                    {anunciosLoading ? (
+                      <LoadingState text="Cargando anuncios..." />
+                    ) : anuncios.length === 0 ? (
+                      <div className="flex flex-col items-center gap-3 py-16 text-center bg-card rounded-xl border border-border">
+                        <div className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Sin anuncios</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Crea tu primer anuncio con el formulario.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      anuncios.map((anuncio) => {
+                        const isEditing = editingAnuncioId === anuncio.id
+                        const isDelConfirm = anuncioDeleteConfirmId === anuncio.id
+                        const isDeleting = anuncioDeleteLoading === anuncio.id
+                        const isToggling = togglingAnuncioId === anuncio.id
+                        const enabled = Boolean(anuncio.activo)
+
+                        return (
+                          <div
+                            key={anuncio.id}
+                            className={cn(
+                              'bg-card rounded-xl border transition-all duration-200',
+                              enabled ? 'border-emerald-200/50' : 'border-border',
+                              isEditing && 'ring-2 ring-accent/20 border-accent/40'
+                            )}
+                          >
+                            {/* Image */}
+                            {anuncio.imagen_url && !isEditing && (
+                              <div className="relative">
+                                <img
+                                  src={`https://montekvps.cloud${anuncio.imagen_url}`}
+                                  alt={anuncio.titulo}
+                                  className="w-full h-32 object-cover rounded-t-xl"
+                                />
                                 <button
                                   type="button"
                                   onClick={() => void handleDeleteAnuncioImage(anuncio.id)}
                                   disabled={deletingImageId === anuncio.id}
-                                  className="absolute top-2 right-2 w-7 h-7 rounded-md bg-foreground/80 text-background flex items-center justify-center hover:bg-foreground transition-colors disabled:opacity-50"
+                                  className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-foreground/75 text-background flex items-center justify-center hover:bg-foreground transition-colors disabled:opacity-50 backdrop-blur-sm"
                                   aria-label="Eliminar imagen"
                                 >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                                 </button>
                               </div>
                             )}
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="font-semibold text-foreground text-sm" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{anuncio.titulo}</p>
-                                  <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded border', anuncio.activo ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-secondary text-muted-foreground border-border')}>
-                                    {anuncio.activo ? 'ACTIVO' : 'INACTIVO'}
-                                  </span>
+
+                            <div className="p-4 space-y-3">
+                              {isEditing ? (
+                                /* ── EDIT MODE ── */
+                                <div className="space-y-3.5">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-semibold text-accent uppercase tracking-wider">Editando anuncio</p>
+                                    <button onClick={() => setEditingAnuncioId(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                    </button>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">Titulo</label>
+                                    <input
+                                      type="text"
+                                      value={editingAnuncioForm.titulo}
+                                      onChange={e => setEditingAnuncioForm(p => ({ ...p, titulo: e.target.value }))}
+                                      className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-150"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">Descripcion</label>
+                                    <textarea
+                                      value={editingAnuncioForm.descripcion}
+                                      onChange={e => setEditingAnuncioForm(p => ({ ...p, descripcion: e.target.value }))}
+                                      rows={3}
+                                      className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-150 resize-none"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">Enlace <span className="font-normal normal-case">(opcional)</span></label>
+                                    <div className="relative">
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                                      <input
+                                        type="url"
+                                        value={editingAnuncioForm.enlace_url}
+                                        onChange={e => setEditingAnuncioForm(p => ({ ...p, enlace_url: e.target.value }))}
+                                        placeholder="https://..."
+                                        className="w-full pl-8 pr-3 py-2.5 rounded-lg border border-border bg-secondary/40 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-150"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between py-0.5">
+                                    <p className="text-sm font-medium text-foreground">Activo</p>
+                                    <AnuncioToggle checked={editingAnuncioForm.activo} onChange={() => setEditingAnuncioForm(p => ({ ...p, activo: !p.activo }))} />
+                                  </div>
+                                  <div className="flex gap-2 justify-end pt-1">
+                                    <button type="button" onClick={() => setEditingAnuncioId(null)} disabled={editingAnuncioLoading} className="text-xs px-3.5 py-2 rounded-lg border border-border bg-secondary text-foreground hover:bg-secondary/80 transition-colors font-medium">
+                                      Cancelar
+                                    </button>
+                                    <button type="button" onClick={() => void handleUpdateAnuncio(anuncio.id)} disabled={editingAnuncioLoading} className="inline-flex items-center gap-1.5 text-xs px-3.5 py-2 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50 font-semibold">
+                                      {editingAnuncioLoading
+                                        ? <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg> Guardando...</>
+                                        : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> Guardar cambios</>
+                                      }
+                                    </button>
+                                  </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {new Date(anuncio.fecha_inicio).toLocaleDateString('es-MX')} — {new Date(anuncio.fecha_fin).toLocaleDateString('es-MX')}
-                                </p>
-                              </div>
-                            </div>
-                            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{anuncio.descripcion}</p>
-                            {anuncio.enlace_url && (
-                              <a href={anuncio.enlace_url} target="_blank" rel="noopener noreferrer" className="inline-block mt-1.5 text-xs text-accent hover:underline">
-                                Ver enlace →
-                              </a>
-                            )}
+                              ) : (
+                                /* ── VIEW MODE ── */
+                                <>
+                                  {/* Header row: title + status toggle */}
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-semibold text-foreground text-sm leading-snug" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{anuncio.titulo}</p>
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        {new Date(anuncio.fecha_inicio).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        {' '}&mdash;{' '}
+                                        {new Date(anuncio.fecha_fin).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                      </p>
+                                    </div>
+                                    <AnuncioToggle
+                                      checked={enabled}
+                                      onChange={() => void handleToggleAnuncioActivo(anuncio)}
+                                      disabled={isToggling}
+                                    />
+                                  </div>
 
-                            {/* Image upload */}
-                            <div className="mt-3 pt-3 border-t border-border/60">
-                              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                                {anuncio.imagen_url ? 'Reemplazar imagen' : 'Subir imagen'}
-                              </label>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => { const f = e.currentTarget.files?.[0]; if (f) void handleUploadAnuncioImage(anuncio.id, f) }}
-                                disabled={uploadingImageId === anuncio.id}
-                                className="text-xs text-muted-foreground file:mr-2 file:text-xs file:font-medium file:py-1 file:px-2.5 file:rounded-md file:border file:border-border file:bg-secondary file:text-foreground hover:file:border-accent/40 cursor-pointer disabled:opacity-50"
-                              />
-                              {uploadingImageId === anuncio.id && <span className="text-xs text-accent ml-2">Subiendo...</span>}
-                            </div>
+                                  {/* Description */}
+                                  <p className="text-xs text-muted-foreground leading-relaxed">{anuncio.descripcion}</p>
 
-                            {/* Actions */}
-                            <div className="mt-3 flex gap-2 justify-end">
-                              <button
-                                type="button"
-                                onClick={() => { setEditingAnuncioId(anuncio.id); setEditingAnuncioForm({ titulo: anuncio.titulo, activo: Boolean(anuncio.activo) }) }}
-                                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/40 hover:text-foreground transition-colors"
-                              >
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteAnuncio(anuncio.id)}
-                                disabled={anuncioDeleteLoading === anuncio.id}
-                                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
-                              >
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                {anuncioDeleteLoading === anuncio.id ? 'Eliminando...' : 'Eliminar'}
-                              </button>
+                                  {/* Link */}
+                                  {anuncio.enlace_url && (
+                                    <a href={anuncio.enlace_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors font-medium">
+                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                                      Ver enlace
+                                    </a>
+                                  )}
+
+                                  {/* Image upload zone */}
+                                  {!anuncio.imagen_url && (
+                                    <label className={cn(
+                                      'flex flex-col items-center gap-1.5 py-3 rounded-lg border-2 border-dashed cursor-pointer transition-colors',
+                                      uploadingImageId === anuncio.id
+                                        ? 'border-accent/40 bg-accent/5'
+                                        : 'border-border hover:border-accent/40 hover:bg-accent/3'
+                                    )}>
+                                      <input type="file" accept="image/*" className="sr-only" disabled={uploadingImageId === anuncio.id} onChange={e => { const f = e.currentTarget.files?.[0]; if (f) void handleUploadAnuncioImage(anuncio.id, f) }} />
+                                      {uploadingImageId === anuncio.id
+                                        ? <><svg className="animate-spin w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg><span className="text-xs text-accent font-medium">Subiendo imagen...</span></>
+                                        : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg><span className="text-xs text-muted-foreground">Subir imagen</span></>
+                                      }
+                                    </label>
+                                  )}
+
+                                  {/* Divider + actions */}
+                                  <div className="pt-2 border-t border-border/60">
+                                    {isDelConfirm ? (
+                                      <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200">
+                                        <p className="text-xs font-medium text-red-800">Eliminar este anuncio permanentemente?</p>
+                                        <div className="flex gap-2 flex-shrink-0">
+                                          <button type="button" onClick={() => setAnuncioDeleteConfirmId(null)} className="text-xs px-2.5 py-1.5 rounded-md border border-border bg-card text-muted-foreground hover:text-foreground transition-colors font-medium">Cancelar</button>
+                                          <button
+                                            type="button"
+                                            disabled={isDeleting}
+                                            onClick={() => void handleDeleteAnuncio(anuncio.id)}
+                                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 font-semibold"
+                                          >
+                                            {isDeleting ? <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" /></svg> : null}
+                                            Si, eliminar
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className={cn(
+                                            'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider',
+                                            enabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-secondary text-muted-foreground border-border'
+                                          )}>
+                                            {enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                                            {enabled ? 'Activo' : 'Inactivo'}
+                                          </span>
+                                          {anuncio.imagen_url && (
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleDeleteAnuncioImage(anuncio.id)}
+                                              disabled={deletingImageId === anuncio.id}
+                                              className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border bg-secondary text-muted-foreground hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-50"
+                                            >
+                                              {deletingImageId === anuncio.id ? 'Quitando...' : 'Quitar imagen'}
+                                            </button>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => { setEditingAnuncioId(anuncio.id); setEditingAnuncioForm({ titulo: anuncio.titulo, descripcion: anuncio.descripcion ?? '', enlace_url: anuncio.enlace_url ?? '', activo: Boolean(anuncio.activo) }) }}
+                                            className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground hover:border-accent/40 transition-colors"
+                                          >
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                            Editar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setAnuncioDeleteConfirmId(anuncio.id)}
+                                            disabled={isDeleting}
+                                            className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+                                          >
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                                            Eliminar
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
                             </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
+                          </div>
+                        )
+                      })
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* ── EMPRESAS ──────────────────────────────── */}
           {activeView === 'empresas' && (
