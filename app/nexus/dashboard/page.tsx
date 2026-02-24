@@ -224,7 +224,7 @@ interface DashboardStats {
   requestsPendientes: number
 }
 
-/* ── Page ────────────────────����──────────────────────────── */
+/* ── Page ────────────────────�����──────────────────────────── */
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -292,11 +292,15 @@ export default function DashboardPage() {
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresasLoading, setEmpresasLoading] = useState(false)
   const [empresasError, setEmpresasError] = useState<string | null>(null)
+  const [empresasSearch, setEmpresasSearch] = useState('')
+  const [expandedEmpresaId, setExpandedEmpresaId] = useState<string | null>(null)
 
   // Licenses
   const [licenses, setLicenses] = useState<License[]>([])
   const [licensesLoading, setLicensesLoading] = useState(false)
   const [licensesError, setLicensesError] = useState<string | null>(null)
+  const [licensesSearch, setLicensesSearch] = useState('')
+  const [licensesFilter, setLicensesFilter] = useState<'all' | 'critical' | 'warning' | 'ok'>('all')
 
   // Dev mode
   const [empresasDevMode, setEmpresasDevMode] = useState<EmpresaDevMode[]>([])
@@ -2108,61 +2112,180 @@ export default function DashboardPage() {
           })()}
 
           {/* ── EMPRESAS ──────────────────────────────── */}
-          {activeView === 'empresas' && (
-            <div className="max-w-5xl">
-              <div className="bg-card rounded-xl border border-border p-6">
-                <SectionHeader
-                  title="Empresas"
-                  description={`${empresas.length} empresa${empresas.length !== 1 ? 's' : ''} registrada${empresas.length !== 1 ? 's' : ''}`}
-                  action={<ReloadButton onClick={() => void loadEmpresas()} loading={empresasLoading} />}
-                />
-                {empresasError && <ErrorBanner message={empresasError} />}
+          {activeView === 'empresas' && (() => {
+            const parentEmpresas = empresas.filter(e => !e.parent_id)
+            const filtered = parentEmpresas.filter(e =>
+              !empresasSearch ||
+              e.nombre.toLowerCase().includes(empresasSearch.toLowerCase()) ||
+              e.rfc.toLowerCase().includes(empresasSearch.toLowerCase()) ||
+              (e.db_nombre_contpaqi ?? '').toLowerCase().includes(empresasSearch.toLowerCase())
+            )
+
+            return (
+              <div className="max-w-5xl space-y-5">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>Empresas</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Directorio de empresas registradas en el sistema</p>
+                  </div>
+                  <ReloadButton onClick={() => void loadEmpresas()} loading={empresasLoading} />
+                </div>
+
+                {/* Stats + search */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-secondary border border-border">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>
+                    <span className="text-xs font-semibold text-muted-foreground">{parentEmpresas.length} empresa{parentEmpresas.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {parentEmpresas.some(e => e.children?.length > 0) && (
+                    <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-primary/8 border border-primary/20">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-primary"><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+                      <span className="text-xs font-semibold text-primary">{parentEmpresas.reduce((acc, e) => acc + (e.children?.length ?? 0), 0)} sucursales</span>
+                    </div>
+                  )}
+                  <div className="relative ml-auto">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre, RFC o DB..."
+                      value={empresasSearch}
+                      onChange={e => setEmpresasSearch(e.target.value)}
+                      className="pl-8 pr-8 py-2 text-xs rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-all w-60"
+                    />
+                    {empresasSearch && (
+                      <button onClick={() => setEmpresasSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Error */}
+                {empresasError && <ErrorState message={empresasError} onRetry={() => void loadEmpresas()} />}
+
+                {/* Content */}
                 {empresasLoading ? (
                   <LoadingState text="Cargando empresas..." />
-                ) : empresas.length === 0 && !empresasError ? (
-                  <EmptyState text="No hay empresas registradas." />
+                ) : filtered.length === 0 && !empresasError ? (
+                  empresasSearch ? (
+                    <div className="flex flex-col items-center gap-3 py-16 text-center">
+                      <div className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                      </div>
+                      <p className="text-sm text-muted-foreground">Sin resultados para <strong className="text-foreground">&ldquo;{empresasSearch}&rdquo;</strong></p>
+                    </div>
+                  ) : (
+                    <EmptyState text="No hay empresas registradas." />
+                  )
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border bg-secondary/60">
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Empresa</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">RFC</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">DB ContPAQi</th>
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Sucursales</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {empresas.map((empresa) => (
-                          <tr key={empresa.id} className="hover:bg-accent/4 transition-colors">
-                            <td className="px-4 py-3">
-                              <p className="font-medium text-foreground">{empresa.nombre}</p>
-                              <p className="text-xs text-muted-foreground font-mono mt-0.5">{empresa.id}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="font-mono text-xs bg-secondary border border-border px-2 py-0.5 rounded text-foreground">{empresa.rfc}</span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-muted-foreground">
-                              {empresa.db_nombre_contpaqi || <span className="italic text-muted-foreground/50">—</span>}
-                            </td>
-                            <td className="px-4 py-3">
-                              {empresa.children && empresa.children.length > 0 ? (
-                                <span className="inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-md">
-                                  {empresa.children.length} sucursal{empresa.children.length !== 1 ? 'es' : ''}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-muted-foreground/50">—</span>
+                  <div className="grid gap-3">
+                    {filtered.map((empresa) => {
+                      const isExpanded = expandedEmpresaId === empresa.id
+                      const hasSucursales = empresa.children && empresa.children.length > 0
+                      const hasDB = Boolean(empresa.db_nombre_contpaqi)
+
+                      return (
+                        <div
+                          key={empresa.id}
+                          className={cn(
+                            'bg-card rounded-xl border transition-all duration-200',
+                            isExpanded ? 'border-accent/40 shadow-sm shadow-accent/5' : 'border-border hover:border-border/80 hover:shadow-sm'
+                          )}
+                        >
+                          {/* Main row */}
+                          <button
+                            type="button"
+                            className="w-full flex items-center gap-4 px-5 py-4 text-left"
+                            onClick={() => setExpandedEmpresaId(isExpanded ? null : empresa.id)}
+                          >
+                            {/* Avatar */}
+                            <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">
+                              {empresa.nombre.charAt(0).toUpperCase()}
+                            </div>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0 text-left">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-sm text-foreground truncate" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{empresa.nombre}</p>
+                                {empresa.es_cliente_principal && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
+                                    Principal
+                                  </span>
+                                )}
+                                {hasSucursales && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/8 text-primary border border-primary/20">
+                                    {empresa.children.length} sucursal{empresa.children.length !== 1 ? 'es' : ''}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                                <span className="font-mono text-xs text-muted-foreground bg-secondary border border-border px-1.5 py-0.5 rounded">{empresa.rfc}</span>
+                                {hasDB && (
+                                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
+                                    {empresa.db_nombre_contpaqi}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Chevron */}
+                            <svg
+                              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                              className={cn('flex-shrink-0 text-muted-foreground transition-transform duration-200', isExpanded && 'rotate-180')}
+                            >
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          </button>
+
+                          {/* Expanded detail */}
+                          {isExpanded && (
+                            <div className="border-t border-border bg-secondary/30 rounded-b-xl px-5 py-4 space-y-4">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-3">
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">ID</p>
+                                  <p className="text-xs font-mono text-foreground truncate" title={empresa.id}>{empresa.id}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">RFC</p>
+                                  <p className="text-sm font-mono font-semibold text-foreground">{empresa.rfc}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">DB ContPAQi</p>
+                                  <p className="text-sm text-foreground">{empresa.db_nombre_contpaqi || <span className="text-muted-foreground/50 italic">No configurada</span>}</p>
+                                </div>
+                              </div>
+
+                              {/* Sucursales */}
+                              {hasSucursales && (
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Sucursales</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {empresa.children.map(child => (
+                                      <div key={child.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border">
+                                        <div className="w-6 h-6 rounded-md bg-secondary border border-border flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                                          {child.nombre.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                          <p className="text-xs font-semibold text-foreground leading-tight">{child.nombre}</p>
+                                          <p className="text-[10px] font-mono text-muted-foreground">{child.rfc}</p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* ── DEV MODE ──────────────────────────────── */}
           {activeView === 'dev-mode' && (() => {
@@ -2400,82 +2523,247 @@ export default function DashboardPage() {
           })()}
 
           {/* ── LICENSES ──────────────────────────────── */}
-          {activeView === 'licenses' && (
-            <div className="max-w-5xl">
-              <div className="bg-card rounded-xl border border-border p-6">
-                <SectionHeader
-                  title="Licencias"
-                  description="Capacidad y uso de licencias por empresa"
-                  action={<ReloadButton onClick={() => void loadLicenses()} loading={licensesLoading} />}
-                />
-                {licensesError && <ErrorBanner message={licensesError} />}
+          {activeView === 'licenses' && (() => {
+            function getLicenseStatus(pct: number): 'critical' | 'warning' | 'ok' {
+              if (pct >= 90) return 'critical'
+              if (pct >= 70) return 'warning'
+              return 'ok'
+            }
+
+            const statusMeta = {
+              critical: { label: 'Critico', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500', dot: 'bg-red-500' },
+              warning:  { label: 'Advertencia', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', bar: 'bg-amber-500', dot: 'bg-amber-500' },
+              ok:       { label: 'Normal', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-accent', dot: 'bg-emerald-500' },
+            }
+
+            const withPct = licenses.map(l => {
+              const pct = l.max_usuarios > 0 ? Math.round(((l.usuarios_activos ?? 0) / l.max_usuarios) * 100) : 0
+              return { ...l, pct, status: getLicenseStatus(pct) as 'critical' | 'warning' | 'ok' }
+            })
+
+            const criticalCount = withPct.filter(l => l.status === 'critical').length
+            const warningCount  = withPct.filter(l => l.status === 'warning').length
+
+            const filtered = withPct.filter(l => {
+              const matchSearch = !licensesSearch ||
+                (l.empresa_nombre ?? '').toLowerCase().includes(licensesSearch.toLowerCase()) ||
+                l.empresa_id.toLowerCase().includes(licensesSearch.toLowerCase())
+              const matchFilter = licensesFilter === 'all' || l.status === licensesFilter
+              return matchSearch && matchFilter
+            })
+
+            return (
+              <div className="max-w-5xl space-y-5">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>Licencias</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Capacidad y uso de licencias por empresa</p>
+                  </div>
+                  <ReloadButton onClick={() => void loadLicenses()} loading={licensesLoading} />
+                </div>
+
+                {/* Stats + filters + search */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Status filter pills */}
+                  {(['all', 'critical', 'warning', 'ok'] as const).map(f => {
+                    const counts = { all: withPct.length, critical: criticalCount, warning: warningCount, ok: withPct.length - criticalCount - warningCount }
+                    const labels = { all: 'Todas', critical: 'Critico', warning: 'Advertencia', ok: 'Normal' }
+                    const active = licensesFilter === f
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setLicensesFilter(f)}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150',
+                          active
+                            ? f === 'critical' ? 'bg-red-100 border-red-300 text-red-700' :
+                              f === 'warning'  ? 'bg-amber-100 border-amber-300 text-amber-700' :
+                              f === 'ok'       ? 'bg-emerald-100 border-emerald-300 text-emerald-700' :
+                              'bg-accent text-white border-accent'
+                            : 'bg-secondary border-border text-muted-foreground hover:text-foreground hover:border-border/80'
+                        )}
+                      >
+                        {f === 'critical' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                        {f === 'warning'  && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                        {f === 'ok'       && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                        {labels[f]}
+                        <span className={cn(
+                          'ml-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold',
+                          active ? 'bg-white/30' : 'bg-secondary/80'
+                        )}>{counts[f]}</span>
+                      </button>
+                    )
+                  })}
+
+                  {/* Search */}
+                  <div className="relative ml-auto">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                    <input
+                      type="text"
+                      placeholder="Buscar empresa..."
+                      value={licensesSearch}
+                      onChange={e => setLicensesSearch(e.target.value)}
+                      className="pl-8 pr-8 py-2 text-xs rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/60 transition-all w-52"
+                    />
+                    {licensesSearch && (
+                      <button onClick={() => setLicensesSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Alerts banner */}
+                {(criticalCount > 0 || warningCount > 0) && !licensesLoading && (
+                  <div className={cn(
+                    'flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium',
+                    criticalCount > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'
+                  )}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    {criticalCount > 0
+                      ? `${criticalCount} empresa${criticalCount !== 1 ? 's' : ''} con uso critico de licencias (90%+)`
+                      : `${warningCount} empresa${warningCount !== 1 ? 's' : ''} con uso elevado de licencias (70%+)`
+                    }
+                  </div>
+                )}
+
+                {/* Error */}
+                {licensesError && <ErrorState message={licensesError} onRetry={() => void loadLicenses()} />}
+
+                {/* Content */}
                 {licensesLoading ? (
                   <LoadingState text="Cargando licencias..." />
-                ) : licenses.length === 0 && !licensesError ? (
-                  <EmptyState text="No hay licencias disponibles." />
+                ) : filtered.length === 0 && !licensesError ? (
+                  licensesSearch || licensesFilter !== 'all' ? (
+                    <div className="flex flex-col items-center gap-3 py-16 text-center">
+                      <div className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                      </div>
+                      <p className="text-sm text-muted-foreground">Sin resultados para el filtro seleccionado.</p>
+                    </div>
+                  ) : (
+                    <EmptyState text="No hay licencias disponibles." />
+                  )
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border bg-secondary/60">
-                          <th className="text-left text-xs font-semibold text-muted-foreground px-4 py-3">Empresa</th>
-                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Usuarios</th>
-                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Sesiones</th>
-                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Disponibles</th>
-                          <th className="text-center text-xs font-semibold text-muted-foreground px-4 py-3">Uso</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {licenses.map((license) => {
-                          const usagePct = license.max_usuarios > 0
-                            ? Math.round(((license.usuarios_activos ?? 0) / license.max_usuarios) * 100)
-                            : 0
-                          return (
-                            <tr key={license.id} className="hover:bg-accent/4 transition-colors">
-                              <td className="px-4 py-3">
-                                <p className="font-medium text-foreground">{license.empresa_nombre || `Empresa ${license.empresa_id}`}</p>
-                                <p className="text-xs text-muted-foreground font-mono mt-0.5">{license.empresa_id}</p>
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <span className="font-semibold text-foreground tabular-nums">
-                                  {license.usuarios_activos ?? 0}
-                                </span>
-                                <span className="text-muted-foreground"> / {license.max_usuarios}</span>
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <span className="font-semibold text-foreground tabular-nums">
-                                  {license.sesiones_activas ?? 0}
-                                </span>
-                                <span className="text-muted-foreground"> / {license.max_usuarios_conectados}</span>
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <span className="text-sm text-foreground tabular-nums">
-                                  {license.usuarios_disponibles ?? 0} <span className="text-muted-foreground text-xs">usr</span>
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2.5 justify-center">
-                                  <div className="w-20 h-1.5 rounded-full bg-secondary border border-border overflow-hidden">
-                                    <div
-                                      className={cn('h-full rounded-full transition-all', usagePct > 80 ? 'bg-amber-500' : 'bg-accent')}
-                                      style={{ width: `${usagePct}%` }}
-                                    />
-                                  </div>
-                                  <span className={cn('text-xs font-semibold tabular-nums w-8 text-right', usagePct > 80 ? 'text-amber-600' : 'text-muted-foreground')}>
-                                    {usagePct}%
+                  <div className="grid gap-3">
+                    {filtered.map((license) => {
+                      const meta = statusMeta[license.status]
+                      const sesionPct = license.max_usuarios_conectados > 0
+                        ? Math.round(((license.sesiones_activas ?? 0) / license.max_usuarios_conectados) * 100)
+                        : 0
+                      const idleMin = license.session_idle_seconds ? Math.round(license.session_idle_seconds / 60) : null
+
+                      return (
+                        <div
+                          key={license.id}
+                          className={cn(
+                            'bg-card rounded-xl border transition-all duration-200 hover:shadow-sm',
+                            license.status === 'critical' ? 'border-red-200/70' :
+                            license.status === 'warning'  ? 'border-amber-200/60' :
+                            'border-border'
+                          )}
+                        >
+                          <div className="p-5">
+                            <div className="flex items-start gap-4">
+                              {/* Avatar */}
+                              <div className={cn(
+                                'w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 border',
+                                license.status === 'critical' ? 'bg-red-100 text-red-700 border-red-200' :
+                                license.status === 'warning'  ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                                'bg-primary/10 text-primary border-primary/20'
+                              )}>
+                                {(license.empresa_nombre ?? 'E').charAt(0).toUpperCase()}
+                              </div>
+
+                              {/* Info */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-semibold text-sm text-foreground" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                                    {license.empresa_nombre || `Empresa ${license.empresa_id.slice(0, 8)}`}
+                                  </p>
+                                  <span className={cn(
+                                    'inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
+                                    meta.bg, meta.border, meta.text
+                                  )}>
+                                    <span className={cn('w-1.5 h-1.5 rounded-full', meta.dot, license.status === 'critical' && 'animate-pulse')} />
+                                    {meta.label}
                                   </span>
                                 </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                                <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate" title={license.empresa_id}>{license.empresa_id}</p>
+                              </div>
+
+                              {/* Big usage number */}
+                              <div className="flex-shrink-0 text-right">
+                                <p className={cn('text-2xl font-bold tabular-nums leading-none', license.pct >= 90 ? 'text-red-600' : license.pct >= 70 ? 'text-amber-600' : 'text-foreground')} style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                                  {license.pct}%
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">de capacidad</p>
+                              </div>
+                            </div>
+
+                            {/* Usage bar */}
+                            <div className="mt-4 space-y-1">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Usuarios activos</p>
+                                <p className="text-xs font-semibold text-foreground tabular-nums">
+                                  {license.usuarios_activos ?? 0} <span className="text-muted-foreground font-normal">/ {license.max_usuarios}</span>
+                                </p>
+                              </div>
+                              <div className="w-full h-2 rounded-full bg-secondary border border-border overflow-hidden">
+                                <div
+                                  className={cn('h-full rounded-full transition-all duration-500', meta.bar)}
+                                  style={{ width: `${Math.min(license.pct, 100)}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Metrics grid */}
+                            <div className="mt-4 grid grid-cols-3 gap-3">
+                              {/* Sesiones */}
+                              <div className="bg-secondary/50 border border-border rounded-lg px-3 py-2.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Sesiones</p>
+                                <div className="flex items-baseline gap-1">
+                                  <span className="text-base font-bold text-foreground tabular-nums" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{license.sesiones_activas ?? 0}</span>
+                                  <span className="text-xs text-muted-foreground">/ {license.max_usuarios_conectados}</span>
+                                </div>
+                                <div className="mt-1.5 w-full h-1 rounded-full bg-secondary border border-border overflow-hidden">
+                                  <div className={cn('h-full rounded-full', sesionPct >= 90 ? 'bg-red-500' : sesionPct >= 70 ? 'bg-amber-500' : 'bg-accent')} style={{ width: `${Math.min(sesionPct, 100)}%` }} />
+                                </div>
+                              </div>
+
+                              {/* Disponibles */}
+                              <div className="bg-secondary/50 border border-border rounded-lg px-3 py-2.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Disponibles</p>
+                                <div className="flex items-baseline gap-1">
+                                  <span className={cn('text-base font-bold tabular-nums', (license.usuarios_disponibles ?? 0) === 0 ? 'text-red-600' : 'text-foreground')} style={{ fontFamily: 'var(--font-space-grotesk)' }}>{license.usuarios_disponibles ?? 0}</span>
+                                  <span className="text-xs text-muted-foreground">usr</span>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground mt-1">slots libres</p>
+                              </div>
+
+                              {/* Idle / Sesiones disp. */}
+                              <div className="bg-secondary/50 border border-border rounded-lg px-3 py-2.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Ses. libres</p>
+                                <div className="flex items-baseline gap-1">
+                                  <span className="text-base font-bold text-foreground tabular-nums" style={{ fontFamily: 'var(--font-space-grotesk)' }}>{license.sesiones_disponibles ?? 0}</span>
+                                  <span className="text-xs text-muted-foreground">slots</span>
+                                </div>
+                                {idleMin !== null && (
+                                  <p className="text-[10px] text-muted-foreground mt-1">idle: {idleMin}m</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            )
+          })()}
         </div>
       </main>
     </div>
